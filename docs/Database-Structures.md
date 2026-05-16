@@ -1,141 +1,361 @@
 # Database Structures
 
-All SQL is **asynchronous** — queries run on a background thread, results arrive via callback. Never blocks the game loop.
+All SQL runs **asynchronously** on a background thread. The game loop is never blocked. Results arrive via `OnSQLAsyncResult`.
 
 ---
 
-## Basic Pattern
+## Callback Signature
 
 ```lua
--- 1. Fire the query
-SQLAsyncQuery("my_label", "SELECT col FROM table WHERE id = 1")
+BridgeFunctionAttach("OnSQLAsyncResult", function(label, callbackParam, rows)
+    -- label        = string you passed to SQLAsyncQuery
+    -- callbackParam = optional extra string passed as 3rd arg to SQLAsyncQuery
+    -- rows         = table (SELECT) or number (INSERT/UPDATE/DELETE or no results)
+end)
+```
 
--- 2. Handle result
-BridgeFunctionAttach("OnSQLAsyncResult", function(label, rows)
-    if label ~= "my_label" then return end
+> ⚠️ The callback receives **3 parameters** — `label`, `callbackParam`, `rows`. Many examples online only show 2. Missing `callbackParam` shifts `rows` into the wrong variable.
 
-    if not rows[1] then return end       -- no results
+---
 
-    local value = rows[1]["col"]         -- always a string
-    local num   = tonumber(rows[1]["col"] or 0)
+## `SQLAsyncQuery(label, sql [, callbackParam])`
+
+| Parameter | Type | Description |
+|---|---|---|
+| `label` | string | Returned as first arg in callback. Use unique prefix per plugin. |
+| `sql` | string | Full SQL statement |
+| `callbackParam` | string | Optional extra string passed back unchanged — useful for carrying player name or index |
+
+```lua
+SQLAsyncQuery("myplug_load", "SELECT points FROM myplug WHERE char_name = 'Test'")
+
+-- with callbackParam to carry context
+SQLAsyncQuery("myplug_load", sql, tostring(aIndex))
+```
+
+---
+
+## What `rows` Contains
+
+### SELECT with results → table
+
+```lua
+-- rows is a 1-based Lua table:
+-- rows[1] = first row  { colName = value, ... }
+-- rows[2] = second row { colName = value, ... }
+-- rows[n] = nth row
+
+#rows   -- total number of rows returned
+```
+
+### SELECT with no results → number `0`
+
+```lua
+-- rows == 0  (not a table!)
+```
+
+### INSERT / UPDATE / DELETE → number (affected rows)
+
+```lua
+-- rows == number of rows affected
+```
+
+**Always check the type before using:**
+
+```lua
+BridgeFunctionAttach("OnSQLAsyncResult", function(label, callbackParam, rows)
+    if label ~= "myplug_load" then return end
+
+    if type(rows) ~= "table" then
+        -- no results (rows == 0) or write query
+        return
+    end
+
+    -- safe to iterate
 end)
 ```
 
 ---
 
-## `SQLAsyncQuery(label, sql)`
+## Column Types in Lua
 
-| Param | Description |
-|---|---|
-| `label` | Identifier returned in `OnSQLAsyncResult` — use unique prefix per plugin |
-| `sql` | Full SQL statement |
+The engine maps MySQL column types automatically:
 
----
-
-## `OnSQLAsyncResult(label, rows)`
-
-| Param | Description |
-|---|---|
-| `label` | Label from the query |
-| `rows` | Array of row tables. `rows[1]` = first row, `rows[n]` = nth row |
-
-- All column values are **strings** — use `tonumber()` for numbers
-- `rows[1]` is `nil` when no rows returned
-
----
-
-## SQL Injection — Always Escape
+| MySQL Type | Lua Type | Notes |
+|---|---|---|
+| `FLOAT`, `DOUBLE`, `DECIMAL` | number (float) | Use as-is |
+| `TINYINT`, `SMALLINT`, `MEDIUMINT` | integer | Use as-is |
+| `INT`, `BIGINT` | number (float) | Large int64 may lose precision |
+| `VARCHAR`, `TEXT`, `CHAR` | string | Use `tonumber()` if numeric |
+| `DATE`, `DATETIME`, `TIMESTAMP` | string | Format: `"2024-01-15 20:00:00"` |
+| `NULL` | *(absent)* | Field is **not added** to the row table — access returns `nil` |
 
 ```lua
-local name = GetObjectName(aIndex):gsub("'", "''")
-local sql = string.format("SELECT * FROM t WHERE char_name = '%s'", name)
+-- INT column → already a number, no conversion needed
+local points = row["points"]            -- integer
+
+-- VARCHAR column → string, convert if numeric
+local level = tonumber(row["level"])    -- convert string → number
+
+-- DATETIME column → string
+local dt = row["created_at"]           -- "2024-01-15 20:00:00"
+
+-- NULL column → nil (key not present)
+if row["optional_col"] == nil then
+    -- column was NULL in the database
+end
 ```
 
 ---
 
-## Passing Player Context to Callback
+## Reading Rows — All Patterns
 
-The callback does not receive `aIndex`. Embed it in the label:
+### One row, one column
 
 ```lua
--- On login: fire query with index in label
-BridgeFunctionAttach("OnCharacterEntry", function(aIndex)
-    local name = GetObjectName(aIndex):gsub("'", "''")
-    SQLAsyncQuery("load_" .. aIndex,
-        string.format("SELECT points FROM data WHERE char_name = '%s'", name))
+SQLAsyncQuery("load_pts_" .. aIndex,
+    string.format("SELECT points FROM myplug WHERE char_name = '%s'",
+        GetObjectName(aIndex):gsub("'", "''")))
+
+BridgeFunctionAttach("OnSQLAsyncResult", function(label, callbackParam, rows)
+    if label:sub(1, 9) ~= "load_pts_" then return end
+    local aIndex = tonumber(label:sub(10))
+
+    if type(rows) ~= "table" then
+        -- player not in table yet, first time
+        return
+    end
+
+    local points = rows[1]["points"]   -- already a number (INT column)
 end)
+```
 
--- In callback: extract index from label
-BridgeFunctionAttach("OnSQLAsyncResult", function(label, rows)
-    if not label:find("load_", 1, true) then return end
-    local aIndex = tonumber(label:sub(6))
+---
 
-    -- Player may have logged out by now — always check
+### One row, multiple columns
+
+```lua
+SQLAsyncQuery("load_player_" .. aIndex, string.format([[
+    SELECT points, last_claim, vip_level, note
+    FROM myplug
+    WHERE char_name = '%s'
+]], GetObjectName(aIndex):gsub("'", "''")))
+
+BridgeFunctionAttach("OnSQLAsyncResult", function(label, callbackParam, rows)
+    if label:sub(1, 12) ~= "load_player_" then return end
+    local aIndex = tonumber(label:sub(13))
+
     if GetObjectConnected(aIndex) ~= OBJECT_ONLINE then return end
+    if type(rows) ~= "table" then return end
 
-    local points = tonumber(rows[1] and rows[1]["points"] or 0)
+    local row        = rows[1]
+    local points     = row["points"]               -- INT  → number
+    local lastClaim  = row["last_claim"]           -- DATETIME → string
+    local vipLevel   = row["vip_level"]            -- TINYINT → integer
+    local note       = row["note"]                 -- VARCHAR → string (or nil if NULL)
+
+    LogPrint(string.format("[%s] pts=%d vip=%d last=%s",
+        GetObjectName(aIndex), points, vipLevel, tostring(lastClaim)))
 end)
 ```
 
 ---
 
-## Common Query Patterns
+### Multiple rows — leaderboard / top list
 
-### SELECT one row
 ```lua
-SQLAsyncQuery("load_" .. aIndex, string.format(
-    "SELECT points, last_login FROM player_data WHERE char_name = '%s'",
-    GetObjectName(aIndex):gsub("'", "''")))
-```
+SQLAsyncQuery("top10", [[
+    SELECT char_name, points, reset_count
+    FROM myplug
+    ORDER BY points DESC
+    LIMIT 10
+]])
 
-### INSERT (no result needed)
-```lua
-SQLAsyncQuery("insert_nores", string.format(
-    "INSERT INTO kill_log (char_name, monster_id, killed_at) VALUES ('%s', %d, NOW())",
-    name, monsterId))
-```
-
-### UPSERT (insert or update)
-```lua
-SQLAsyncQuery("save_nores", string.format(
-    "INSERT INTO player_data (char_name, points) VALUES ('%s', %d) "
- .. "ON DUPLICATE KEY UPDATE points = %d",
-    name, points, points))
-```
-
-### Multiple rows
-```lua
-SQLAsyncQuery("top10", "SELECT char_name, points FROM board ORDER BY points DESC LIMIT 10")
-
-BridgeFunctionAttach("OnSQLAsyncResult", function(label, rows)
+BridgeFunctionAttach("OnSQLAsyncResult", function(label, callbackParam, rows)
     if label ~= "top10" then return end
-    for i, row in ipairs(rows) do
-        LogPrint(string.format("#%d %s — %s pts", i, row["char_name"], row["points"]))
+    if type(rows) ~= "table" then
+        LogPrint("Leaderboard is empty.")
+        return
+    end
+
+    LogPrint("=== Top " .. #rows .. " Players ===")
+
+    for i = 1, #rows do
+        local row = rows[i]
+        LogPrint(string.format("#%d %s — %d pts / %d resets",
+            i, row["char_name"], row["points"], row["reset_count"]))
     end
 end)
 ```
 
 ---
 
-## Recommended Table Design
+### Multiple rows — build a lookup table
 
-```sql
-CREATE TABLE myplugin_data (
-    char_name  VARCHAR(10)  NOT NULL,
-    points     INT          NOT NULL DEFAULT 0,
-    last_claim DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    PRIMARY KEY (char_name)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8;
+Load all records into a Lua table on startup, then use it instantly without further DB calls:
+
+```lua
+local rewardTable = {}   -- [char_name] = { points, claimed }
+
+BridgeFunctionAttach("OnReadScript", function()
+    SQLAsyncQuery("init_load_all", "SELECT char_name, points, claimed FROM myplug")
+end)
+
+BridgeFunctionAttach("OnSQLAsyncResult", function(label, callbackParam, rows)
+    if label ~= "init_load_all" then return end
+    if type(rows) ~= "table" then return end
+
+    for i = 1, #rows do
+        local row = rows[i]
+        rewardTable[row["char_name"]] = {
+            points  = row["points"],
+            claimed = row["claimed"],
+        }
+    end
+
+    LogPrint("[MyPlugin] loaded " .. #rows .. " player records")
+end)
+
+-- Later: instant access, no DB call
+BridgeFunctionAttach("OnCharacterEntry", function(aIndex)
+    local name = GetObjectName(aIndex)
+    local data = rewardTable[name]
+    if data then
+        NoticeSend(aIndex, 0, "Your points: " .. data.points)
+    end
+end)
 ```
 
 ---
 
-## Key Rules
+### Multiple rows — process per-player rewards
 
-| Rule | Why |
+```lua
+SQLAsyncQuery("pending_rewards", [[
+    SELECT char_name, item_cat, item_idx, item_level
+    FROM pending_rewards
+    WHERE delivered = 0
+]])
+
+BridgeFunctionAttach("OnSQLAsyncResult", function(label, callbackParam, rows)
+    if label ~= "pending_rewards" then return end
+    if type(rows) ~= "table" then return end
+
+    for i = 1, #rows do
+        local row      = rows[i]
+        local name     = row["char_name"]
+        local aIndex   = GetObjectIndexByName(name)
+
+        if aIndex >= 0 and GetObjectConnected(aIndex) == OBJECT_ONLINE then
+            InsertItem_GremoryCase(aIndex,
+                row["item_cat"], row["item_idx"], row["item_level"],
+                255, 0, 0, 0, 0, 0, 0, 0,
+                0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0)
+
+            -- Mark delivered
+            SQLAsyncQuery("mark_delivered", string.format(
+                "UPDATE pending_rewards SET delivered = 1 WHERE char_name = '%s'",
+                name:gsub("'", "''")))
+        end
+    end
+end)
+```
+
+---
+
+## Passing Player Context
+
+The callback does not know who triggered the query. Two patterns:
+
+### Pattern A — Index in label (simple)
+
+```lua
+SQLAsyncQuery("load_" .. aIndex, sql)
+
+-- in callback:
+local aIndex = tonumber(label:sub(6))   -- "load_" is 5 chars
+if GetObjectConnected(aIndex) ~= OBJECT_ONLINE then return end
+```
+
+### Pattern B — callbackParam (cleaner for strings)
+
+```lua
+local name = GetObjectName(aIndex)
+SQLAsyncQuery("load_data", sql, name)   -- name passed as callbackParam
+
+-- in callback:
+local name   = callbackParam
+local aIndex = GetObjectIndexByName(name)
+if aIndex < 0 or GetObjectConnected(aIndex) ~= OBJECT_ONLINE then return end
+```
+
+---
+
+## Write Queries (INSERT / UPDATE / DELETE)
+
+No need to read `rows` for write-only queries — just fire and forget:
+
+```lua
+-- INSERT
+SQLAsyncQuery("w", string.format(
+    "INSERT INTO myplug (char_name, points) VALUES ('%s', 0)",
+    name:gsub("'", "''")))
+
+-- UPDATE
+SQLAsyncQuery("w", string.format(
+    "UPDATE myplug SET points = points + %d WHERE char_name = '%s'",
+    amount, name:gsub("'", "''")))
+
+-- UPSERT (insert or update)
+SQLAsyncQuery("w", string.format([[
+    INSERT INTO myplug (char_name, points) VALUES ('%s', %d)
+    ON DUPLICATE KEY UPDATE points = %d
+]], name:gsub("'", "''"), points, points))
+
+-- DELETE
+SQLAsyncQuery("w", string.format(
+    "DELETE FROM myplug WHERE char_name = '%s'",
+    name:gsub("'", "''")))
+```
+
+For write queries, `rows` in the callback = number of affected rows. You can check it:
+
+```lua
+BridgeFunctionAttach("OnSQLAsyncResult", function(label, callbackParam, rows)
+    if label ~= "my_update" then return end
+    -- rows = affected row count (number)
+    if rows == 0 then
+        LogPrint("No rows updated — char not found")
+    end
+end)
+```
+
+---
+
+## SQL Injection — Always Escape
+
+```lua
+-- Escape single quotes in any string that comes from a player or external source
+local safe = GetObjectName(aIndex):gsub("'", "''")
+local sql   = string.format("SELECT * FROM t WHERE char_name = '%s'", safe)
+```
+
+Never concatenate raw input directly into SQL.
+
+---
+
+## Quick Reference
+
+| `rows` value | Meaning |
 |---|---|
-| Always use `SQLAsyncQuery` | No blocking SQL from Lua |
-| Re-check `GetObjectConnected()` in callback | Player may disconnect before result arrives |
-| Use unique labels per plugin | Prevent label collisions |
-| `tonumber()` all numeric columns | All values arrive as strings |
-| Escape `'` in strings | Prevent SQL injection |
+| `type(rows) == "table"` | SELECT returned rows |
+| `rows == 0` | SELECT returned no rows |
+| `type(rows) == "number"` and `rows > 0` | INSERT/UPDATE/DELETE affected N rows |
+
+| Column MySQL type | Lua type |
+|---|---|
+| INT, TINYINT, SMALLINT, MEDIUMINT | integer (use directly) |
+| BIGINT, FLOAT, DOUBLE, DECIMAL | number (use `math.floor()` for integers) |
+| VARCHAR, TEXT, CHAR | string (use `tonumber()` if numeric) |
+| DATE, DATETIME, TIMESTAMP | string (`"YYYY-MM-DD HH:MM:SS"`) |
+| NULL | `nil` (field absent from row table) |
