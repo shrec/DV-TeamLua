@@ -23,6 +23,11 @@ Documentation for server-side and client-side Lua plugin development for the Dev
 
 ---
 
-## Client-Side Lua
+## MU Plugin Framework (MUPF)
 
-🚧 Work in progress — documentation will be added when the implementation is complete.
+Build a self-contained plugin with **both** a server side (Lua) and an in-game client UI
+(HTML/CSS/JS/SVG), delivered to players at runtime.
+
+- [MUPF Plugins](docs/MUPF-Plugins.md) — overview, architecture, the manifest, capabilities, dev-vs-ship workflow, packaging (`.mupf` + MupfPacker)
+- [MUPF Server API](docs/MUPF-Server-API.md) — `PluginRegister`, `OnInvoke`, and the `ctx:*` object (`reply` / `sql` / `playerName` / `push`)
+- [MUPF Client API](docs/MUPF-Client-API.md) — the in-game UI: `MUPF.invoke` / `render` / `close`, the no-DOM re-render model, `__mupf_click`, SVG, CSS/font caveats
