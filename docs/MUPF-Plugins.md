@@ -94,7 +94,8 @@ A plugin lives under the server's plugins folder: **`Data/ClientLuaPlugin/`**.
 | `apiVersion` / `minApiVersion` | Host-API version the plugin targets / requires. A client whose API < `minApiVersion` quarantines the plugin. |
 | `server.entry` | Path to the server Lua (loaded server-side, never sent). |
 | `client.entry` / `client.html` | Client Lua (optional) / the HTML entry page. |
-| `client.window` | `width`, `height`, `title` of the in-game window. |
+| `client.window` | `width`, `height`, `title` of the in-game main window. |
+| `client.launcher` | *(optional)* a tier-1 always-on launcher button — see [2-tier plugins](#2-tier-plugins--an-always-on-launcher-button). |
 | `entryPoints.hotkey` | Key that toggles the window (`"F5"`, `"F6"`, a single letter…). |
 | `permissions` | Capabilities the plugin requests. Granted only if the operator also allows them (see Capabilities). |
 | `limits` | Per-plugin caps (asset bytes, message bytes, in-flight requests). |
@@ -127,6 +128,53 @@ plugin gets nothing.
 > fails, the plugin keeps running.
 
 See **[MUPF Server API](MUPF-Server-API.md)** and **[MUPF Client API](MUPF-Client-API.md)**.
+
+---
+
+## 2-tier plugins — an always-on launcher button
+
+A hotkey is not always enough — you can't bind every plugin to a key. A plugin can ship a
+**tier-1 launcher**: a small, always-on, fixed button that opens the plugin's **tier-2 main
+window** on click. Both are ordinary HTML pages (same engine, same rules) — it's just two
+windows of one plugin.
+
+Declare the launcher under `client.launcher`:
+
+```json
+"client": {
+  "html": "client/index.html",
+  "launcher": {
+    "html": "client/launcher.html",
+    "width": 150, "height": 46,
+    "anchor": "top-left", "x": 16, "y": 96
+  },
+  "window": { "html": "client/index.html", "width": 420, "height": 300, "title": "2-Tier Test" }
+}
+```
+
+| Field | Meaning |
+|---|---|
+| `html` | the launcher button's HTML page (e.g. `client/launcher.html`) |
+| `width` / `height` | the launcher window size (px) |
+| `anchor` | where on the game window it sits (below) |
+| `x` / `y` | pixel offset from that anchor, into the game client area |
+
+**Anchors:** `top-left` · `top-right` · `top-center` · `bottom-left` · `bottom-right` ·
+`bottom-center` · `left` · `right` · `center`. The launcher is positioned **relative to the game
+window** (works at any resolution), follows it when it moves, and hides when you alt-tab away.
+
+The launcher window is **always visible, fixed, not movable, and not closable** — it is the
+plugin's entry point. Its page opens the main window by calling **`MUPF.open()`** (see the
+[Client API](MUPF-Client-API.md#mupfopenid--tier-1-launcher)). The main window opens / closes /
+drags normally; a plugin may also keep an `entryPoints.hotkey` and/or be opened by the server.
+
+```
+[always-on launcher button]  --click → MUPF.open()-->  [main window opens]
+   client/launcher.html                                   client/index.html
+```
+
+The bundled **2-Tier Test** plugin (`com.dvteam.test2tier`) is a minimal working example
+(launcher pill → a main window that pings the server).
 
 ---
 

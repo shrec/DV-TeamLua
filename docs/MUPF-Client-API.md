@@ -61,7 +61,17 @@ Replace the whole page with `html` (a complete fragment/string). Applied off the
 stack (next frame), so it is safe to call from inside a callback.
 
 ### `MUPF.close()`
-Close the plugin window.
+Close the (main) plugin window.
+
+### `MUPF.open([id])` · tier-1 launcher
+Open a plugin's **main** window. With no argument, `MUPF.open()` opens **this** plugin's main
+window — this is what a **tier-1 launcher** page calls when its button is clicked. With an id,
+`MUPF.open("com.x.y")` opens that plugin's main window. *(Requires `ui.window`.)*
+
+```js
+// in client/launcher.html — the whole always-on button opens the main window:
+function __mupf_click(x, y) { MUPF.open(); }
+```
 
 ---
 
@@ -141,14 +151,21 @@ renders as an empty box (tofu).
 
 ---
 
-## Window & launcher
+## Windows: main + tier-1 launcher
 
-- **Size/title:** `client.window` in the manifest (`width`, `height`, `title`).
-- **Behavior:** a borderless popup that stays over the game scene, follows the game window
-  when you drag it, and **hides when you alt-tab away** (returns when the game regains focus).
-- **Open/close:** the manifest `entryPoints.hotkey` (e.g. `F5`) toggles it; the host's
-  top-right close hotspot and `MUPF.close()` close it.
-- Multiple plugin windows can be open at once.
+**Main window** (`client.window`):
+- **Size/title** from the manifest (`width`, `height`, `title`).
+- A borderless popup that stays over the game scene, follows the game window when you drag it,
+  and **hides when you alt-tab away** (returns when the game regains focus).
+- **Open:** the manifest `entryPoints.hotkey` (e.g. `F5`), a tier-1 launcher (`MUPF.open()`), or
+  the server. **Close:** the host's top-right close hotspot or `MUPF.close()`. Several can be open.
+
+**Tier-1 launcher** (`client.launcher`, optional):
+- A small **always-on, fixed, non-movable, non-closable** button window, positioned by `anchor`
+  + `x`/`y` relative to the game window (see
+  [MUPF Plugins → 2-tier plugins](MUPF-Plugins.md#2-tier-plugins--an-always-on-launcher-button)).
+- Renders its own `launcher.html`; the same `__mupf_click(x, y)` model applies. Its click calls
+  `MUPF.open()` to open the main window.
 
 ---
 
