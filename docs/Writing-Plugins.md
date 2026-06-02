@@ -2,6 +2,11 @@
 
 A complete, practical guide to building **MU Plugin Framework (MUPF)** plugins — from a first hello-world to a full multi-window, database-backed plugin of any complexity. For the API reference, see [MUPF Plugins](MUPF-Plugins.md), [MUPF Server API](MUPF-Server-API.md), and [MUPF Client API](MUPF-Client-API.md).
 
+> **Architecture in one line:** the **front-end is HTML/JavaScript** (your `client/` pages), the
+> **logic and data live on the server** (`server.lua`), and the client DLL's **Lua bridge**
+> connects them (`MUPF.invoke` ↔ `OnInvoke` / `ctx:reply`). There is **no client-side Lua
+> runtime** — you don't write client Lua; `client.entry`/`client.lua` is a reserved manifest field.
+
 ## Contents
 
 - [1. Quickstart — your first plugin](#1-quickstart--your-first-plugin)

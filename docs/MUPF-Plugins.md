@@ -93,7 +93,8 @@ A plugin lives under the server's plugins folder: **`Data/ClientLuaPlugin/`**.
 | `id` | Reverse-DNS unique id. The routing + policy key. **Required.** |
 | `apiVersion` / `minApiVersion` | Host-API version the plugin targets / requires. A client whose API < `minApiVersion` quarantines the plugin. |
 | `server.entry` | Path to the server Lua (loaded server-side, never sent). |
-| `client.entry` / `client.html` | Client Lua (optional) / the HTML entry page. |
+| `client.html` | the HTML entry page — the UI **and its JavaScript**. |
+| `client.entry` | *reserved.* A per-plugin **client-side Lua** runtime is not active yet — **client logic is JavaScript** in your HTML, not Lua. Safe to omit. |
 | `client.window` | `width`, `height`, `title` of the in-game main window. |
 | `client.launcher` | *(optional)* a tier-1 always-on launcher button — see [2-tier plugins](#2-tier-plugins--an-always-on-launcher-button). |
 | `entryPoints.hotkey` | Key that toggles the window (`"F5"`, `"F6"`, a single letter…). |

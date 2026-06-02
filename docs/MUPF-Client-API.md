@@ -5,6 +5,12 @@ own window. It is drawn by the client's bundled HTML/CSS engine (**litehtml**) w
 run by **duktape** — this is *not* a full browser. Read the **Important model** section first;
 it is the single biggest difference from web development.
 
+> **Client logic is JavaScript.** There is no client-side Lua runtime — the manifest's
+> `client.entry` / `client.lua` is a reserved field that is **not executed** today. The
+> architecture is: **front-end = HTML/JS** (your pages) · **logic + data = `server.lua`** ·
+> the client DLL's **bridge** connects them (`MUPF.invoke` ↔ `OnInvoke` / `ctx:reply`). You
+> never write client-side Lua.
+
 ---
 
 ## ⚠️ Important model — there is **no live DOM**
