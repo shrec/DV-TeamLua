@@ -13,8 +13,9 @@ Documentation for server-side and client-side Lua plugin development for the Dev
 
 ## Server-Side Lua
 
+- **[Server Lua Functions](docs/Server-Lua-Functions.md)** — the complete, code-generated reference of **all 244 engine functions** (`LuaFunction.cpp`): exact **argument counts**, parameter types, and returns. Authoritative — arg counts are enforced, so match them exactly (the #1 cause of plugin crashes).
 - [Server Callbacks](docs/Server-Callbacks.md) — all 29 event hooks with parameters and return values
-- [Server Global Functions](docs/Server-Global-Functions.md) — complete C++ API reference
+- [Server Global Functions](docs/Server-Global-Functions.md) — narrative C++ API reference (grouped by topic with examples)
 - [Player Structure](docs/Player-Structure.md) — all player getters and setters
 - [Monster Structure](docs/Monster-Structure.md) — spawn, kill events, map iteration
 - [Item Structures](docs/Item-Structures.md) — inventory, give/drop, Gremory Case

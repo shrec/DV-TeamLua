@@ -286,12 +286,9 @@ BridgeFunctionAttach("OnNpcTalk", function(aIndex, npcIndex)
 end)
 ```
 
-### `SendRgbChat(aIndex, r, g, b, message)`
-Send a colored chat message.
-
-```lua
-SendRgbChat(aIndex, 255, 215, 0, "You found a legendary item!")  -- gold text
-```
+### `SendRgbChat(aIndex, text)`
+> ⚠️ **Stub — currently a no-op** (2 args: `aIndex`, `text`). It does not yet send anything;
+> use `NoticeSend` for player-visible colored text.
 
 ### `PostSend(type, messageId, name, text)`
 Send a postal / inbox message.
@@ -477,8 +474,9 @@ Returns the display name of a map.
 local name = GetMapName(MAP_LORENCIA)   -- "Lorencia"
 ```
 
-### `MapGetItemTable(mapId, x)` → table
-Get item data from the world at a position.
+### `MapGetItemTable(aIndex, itemIndex)` → table
+Read a ground item in the player's world into an item table (nil if none). `itemIndex` is the
+ground-item object index, not a coordinate.
 
 ### `FireworksSend(aIndex, x, y)`
 Trigger a fireworks particle effect at coordinates on the player's current map.
@@ -603,75 +601,85 @@ MonsterDelete(idx)
 
 ## Items
 
-See [Item Structures](Item-Structures.md) for item table format.
+See [Item Structures](Item-Structures.md) for the item-table format and the full give/drop
+guide. **The engine uses one combined `itemid = cat*512 + idx`** — never a separate
+`(cat, idx)` pair — and **argument counts are enforced** (wrong arity raises a Lua error). The
+complete arg-count reference is [Server Lua Functions](Server-Lua-Functions.md).
 
-### `ItemGive(aIndex, bagId)`
-Give an item from a predefined bag directly to inventory.
+### `ItemGive(aIndex, bagId)` — 2 args
+Roll a predefined **ItemBag** into the inventory. (Not a direct item give — use `ItemGiveEx`.)
 
-### `ItemGiveEx(aIndex, itemCat, itemIndex, itemLevel, count, opt1, opt2, opt3, ancient, harmony, ...)`
-Give a specific item with full option control.
+### `ItemGiveEx(aIndex, itemid, level, durability, opt1, opt2, opt3, newOption [, ...])` — ≥ 8 args
+Create a specific item directly into the inventory. Optional trailing args (in order):
+`setOption, johOption, opt380, socket1..socket5, socketBonus, duration, extraExe`.
+For a **stackable** item the **durability is the stack count** (with `level = 0`).
 
 ```lua
--- Give +15 Kris with Skill + full Excellent
-ItemGiveEx(aIndex, 0, 0, 15, 1, 0, 1, 63, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0)
+-- Give 30 Jewels of Soul (stackable: durability = count, level 0):
+ItemGiveEx(aIndex, 14 * 512 + 14, 0, 30, 0, 0, 0, 0)
+-- Give a +15 item with Skill + full Excellent:
+ItemGiveEx(aIndex, 0 * 512 + 0, 15, 255, 0, 1, 63, 0)
 ```
 
-### `ItemDrop(aIndex, map, x, y, bagId)`
-Drop an item from a bag onto the ground.
+### `ItemDrop(aIndex, map, x, y, bagId)` — 5 args
+Roll a predefined **ItemBag** as a ground drop.
 
-### `ItemDropEx(aIndex, map, x, y, itemCat, itemIndex, itemLevel, opt1, opt2, opt3, ancient, ...)`
-Drop a specific item with full options on the ground.
+### `ItemDropEx(aIndex, map, x, y, itemid, level, durability, skill, luck, option, newOption [, ...])` — ≥ 11 args
+Drop a specific item on the ground. Optional trailing args (in order):
+`setOption, johOption, opt380, socket1..socket5, socketBonus, duration, lootInd, extraExe`.
 
 ```lua
 ItemDropEx(aIndex,
     GetObjectMap(aIndex), GetObjectMapX(aIndex), GetObjectMapY(aIndex),
-    13, 14, 0,         -- Jewel of Chaos
-    0, 0, 0, 0,        -- no options
-    255,               -- durability
-    0, 0, 0, 0, 0, 0,  -- sockets
-    0, 0, 0, 0, 0)
+    14 * 512 + 14,    -- itemid (Jewel of Soul)
+    0,                -- level
+    1,                -- durability
+    0, 0, 0, 0)       -- skill, luck, option, newOption
 ```
 
-### `CreateItem(itemCat, itemIndex, itemLevel, durability, opt1, opt2, opt3, ancient, harmony, ...)` → itemId
-Build an item and return its ID (does not place it in inventory).
+### `CreateItem(useType, monsterIndex, map, x, y, itemid, level, dur, skill, luck, option, playerIndex, ancient, duration, socket, elemental, muunEvo, exc, masteryExc, s1, s2, s3, s4, s5, socketBonus, errtelRank, count)` → itemId — 27 args
+Low-level builder used by the engine to drop on the map **or** insert into inventory / chaos box /
+Gremory Case depending on `useType`. Most plugins want `ItemGiveEx` / `ItemDropEx` /
+`InsertItem_GremoryCase` instead. Returns the itemid on success, `-1`/`0` on failure.
 
-### `InsertItem_GremoryCase(aIndex, itemCat, itemIndex, itemLevel, durability, opt1, opt2, opt3, skill, luck, exc, ancient, ...)`
-Insert item directly into player's Gremory Case (reward inbox — safe from disconnect/death).
+### `InsertItem_GremoryCase(aIndex, caseType, giveType, itemid, level, dur, skill, luck, option, ancient, socket, elemental, muunEvo, exc, masteryExc, s1, s2, s3, s4, s5, socketBonus, receiptDur, duration, count)` — **exactly 24 args**
+Insert an item directly into the player's Gremory Case (reward inbox — safe from
+disconnect/death). `caseType`: `0`=Account `1`=Character `2`=Mobile `3`=PersonalStore.
 
 ```lua
--- Give a Jewel of Bless to inbox
-InsertItem_GremoryCase(aIndex, 13, 13, 0, 255, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0)
+-- Give 5 Jewels of Bless to the Character inbox (one stacked entry):
+InsertItem_GremoryCase(aIndex, 1, 0, 14 * 512 + 13, 0, 5, 0,0,0,0,0,0,0,0,0, 0,0,0,0,0, 0,0,0, 1)
 ```
 
-### `InsertItem_GremoryCaseEx(...)`
-Extended version with additional parameters.
+### `InsertItem_GremoryCaseEx(aIndex, caseType, giveType, itemid, level, dur, skill, luck, option, ancient, item380, muunEvo, exc, masteryExc, s1, s2, s3, s4, s5, socketBonus, receiptDur, count)` — **exactly 22 args**
+Same as above but with a `380Option` field instead of the socket/elemental block.
 
-### `IsItem(cat, idx)` → boolean
-Check if item ID is valid.
+### `IsItem(itemid)` → boolean — 1 arg
+True if a template exists for the combined `itemid`.
 
-### `IsSocketItem(itemTable)` → boolean
-Check for socket slots.
+### `IsSocketItem(itemid)` → boolean — 1 arg
+True if the item is a socket-kind item.
 
-### `IsElementalItem(itemTable)` → boolean
-Check for elemental options.
+### `IsElementalItem(itemid)` → boolean — 1 arg
+True if the item is pentagram/errtel (elemental).
 
-### `IsPentagramItem(itemTable)` → boolean
-Check if pentagram item.
+### `IsPentagramItem(itemid)` → boolean — 1 arg
+True if the item is a pentagram item.
 
-### `Is28Option(itemTable)` → boolean
-Check for 2.8 additional option.
+### `Is28Option()` → boolean — 0 args
+Stub — always returns `false`.
 
-### `GetItemKindA(cat, idx)` → integer
-Get the item kind type (weapon class / armor type).
+### `GetItemKindA(itemid)` → integer — 1 arg
+The item template's `Kind1`, nil if the item is unknown.
 
-### `GetBagItemLevel(slot)` → integer
-Get level of a bag item.
+### `GetBagItemLevel(minLevel, maxLevel)` → integer — 2 args
+Return a random item level within `[minLevel, maxLevel]`.
 
-### `GetAncientOpt(slot)` → integer
-Get ancient option byte.
+### `GetAncientOpt(itemid)` → integer — 1 arg
+Return a random ancient option for the item.
 
-### `GCTotalFreeSlotCount(aIndex, caseType)` → integer
-Free slot count in Gremory Case.
+### `GCTotalFreeSlotCount(aIndex, caseType)` → integer — 2 args
+Free slot count in the player's Gremory Case of the given type (`-1` on error).
 
 ---
 
@@ -680,19 +688,19 @@ Free slot count in Gremory Case.
 See [Item Structures](Item-Structures.md) for the full inventory API.
 
 ```lua
--- Quick reference
+-- Quick reference (all slot-based; itemid = cat*512 + idx where an item id is taken)
 InventoryGetWearSize(aIndex)
 InventoryGetMainSize(aIndex)
 InventoryGetFullSize(aIndex)
-InventoryGetItemTable(aIndex, slot)          -- item table or nil
-InventoryGetItemCount(aIndex)
-InventoryGetItemIndex(aIndex, cat, idx)      -- first slot (-1 if none)
+InventoryGetItemTable(aIndex, slot)               -- item table, or nil if empty
+InventoryGetItemIndex(aIndex, slot)               -- item Index at slot, nil if empty
+InventoryGetItemCount(aIndex, itemid, level)      -- count of matching items
 InventoryGetFreeSlotCount(aIndex)
-InventoryCheckSpaceByItem(aIndex, cat, idx)  -- boolean
-InventoryCheckSpaceBySize(aIndex, w, h)      -- boolean
-InventorySetItemTable(aIndex, slot, tbl)
-InventoryDelItemIndex(aIndex, cat, idx)
-InventoryDelItemCount(aIndex, cat, idx, n)
+InventoryCheckSpaceByItem(aIndex, itemid)         -- free slot (>=0), or <0 if no room
+InventoryCheckSpaceBySize(aIndex, w, h)           -- free slot (>=0), or <0 if no room
+InventorySetItemTable(aIndex, slot, tbl)          -- edit the item already in slot
+InventoryDelItemIndex(aIndex, slot)               -- delete the item at slot
+InventoryDelItemCount(aIndex, itemid, level, n)   -- delete N matching items
 
 -- Event inventory (same API, different prefix)
 EventInventoryGet/Set/Del...
@@ -700,6 +708,11 @@ EventInventoryGet/Set/Del...
 -- Muun inventory
 MuunInventoryGet/Set/Del...
 ```
+
+> ⚠️ `InventoryCheckSpaceByItem` takes the **combined `itemid`** and returns a **slot number**
+> (`< 0` = no room), not a boolean. `InventoryGetItemIndex` / `InventoryDelItemIndex` are
+> **slot-based** (`aIndex, slot`), and `InventoryGetItemCount` / `InventoryDelItemCount` match by
+> `itemid` + `level`. See [Item Structures](Item-Structures.md).
 
 ---
 
@@ -802,14 +815,19 @@ See [Database Structures](Database-Structures.md) for full guide.
 
 ### Give a reward safely
 ```lua
-local function GiveReward(aIndex, cat, idx, level)
-    if InventoryCheckSpaceByItem(aIndex, cat, idx) then
-        ItemGiveEx(aIndex, cat, idx, level, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0)
+local function GiveReward(aIndex, itemid, level, dur)
+    local slot = InventoryCheckSpaceByItem(aIndex, itemid)   -- free slot, or <0 if full
+    if slot and slot >= 0 then
+        ItemGiveEx(aIndex, itemid, level, dur, 0, 0, 0, 0)
     else
-        InsertItem_GremoryCase(aIndex, cat, idx, level, 255, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0)
+        -- caseType 1 = Character; one stacked entry (count = 1)
+        InsertItem_GremoryCase(aIndex, 1, 0, itemid, level, dur, 0,0,0,0,0,0,0,0,0, 0,0,0,0,0, 0,0,0, 1)
         NoticeSend(aIndex, 0, "Inventory full — item sent to inbox.")
     end
 end
+
+-- e.g. 5 Jewels of Bless (stackable: dur = count, level 0):
+GiveReward(aIndex, 14 * 512 + 13, 0, 5)
 ```
 
 ### Iterate all online players
