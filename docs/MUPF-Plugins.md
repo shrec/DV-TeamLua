@@ -162,10 +162,12 @@ Declare the launcher under `client.launcher`:
 
 **Anchors:** `top-left` · `top-right` · `top-center` · `bottom-left` · `bottom-right` ·
 `bottom-center` · `left` · `right` · `center`. The launcher is positioned **relative to the game
-window** (works at any resolution), follows it when it moves, and hides when you alt-tab away.
+window** (works at any resolution), follows it when it moves, and hides when you alt-tab away
+**or leave the game world** (logo / server-select / character-select / loading screens).
 
-The launcher window is **always visible, fixed, not movable, and not closable** — it is the
-plugin's entry point. Its page opens the main window by calling **`MUPF.open()`** (see the
+The launcher window is **always-on while you are in the game world, fixed, not movable, and not
+closable** — it is the plugin's entry point. It is *not* drawn on the login / character-select
+screens (the same rule applies to the main window), so plugin UI never leaks over them. Its page opens the main window by calling **`MUPF.open()`** (see the
 [Client API](MUPF-Client-API.md#mupfopenid--tier-1-launcher)). The main window opens / closes /
 drags normally; a plugin may also keep an `entryPoints.hotkey` and/or be opened by the server.
 

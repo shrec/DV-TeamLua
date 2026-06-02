@@ -110,6 +110,21 @@ backgrounds, text (color, size, weight, `letter-spacing`, `text-transform`, `tex
 `flex`, tables, `nth-child`, `width/height/padding/margin`, `white-space:nowrap`,
 `vertical-align`, `position:absolute/relative`, `overflow:hidden`.
 
+**External stylesheets work.** Keep your CSS in its own file (e.g. `client/style.css`) and link it:
+
+```html
+<link rel="stylesheet" href="style.css">   <!-- loaded from your client/ folder -->
+```
+
+`@import "more.css";` from inside a stylesheet works too. Paths resolve against the plugin's
+`client/` folder, exactly like SVG assets — so a bare `href="style.css"` finds `client/style.css`.
+Inline `<style>…</style>` still works as well.
+
+> ⚠️ Re-rendered views follow the same rule as `<script>`: the string you pass to `MUPF.render()`
+> is re-parsed from scratch, so include the `<link rel="stylesheet">` (or an inline `<style>`) **in
+> every rendered view**, not just the entry `index.html`. The CSS file is re-read from the VFS on
+> each render (cheap), so there is no stale-style issue.
+
 **Not (yet) rendered — avoid relying on these:**
 
 | Feature | Status / workaround |
@@ -138,7 +153,7 @@ renders as an empty box (tofu).
 
 ## Images & SVG
 
-`<img>` and CSS `background-image` render via an SVG rasterizer (**nanosvg**):
+`<img>` and CSS `background-image` render **SVG** (via nanosvg) and **PNG / JPG / BMP** (via stb_image):
 
 ```html
 <img class="crown" src="crown.svg">
@@ -150,7 +165,9 @@ renders as an empty box (tofu).
 - Ship the `.svg` files in `client/`; they are packed with the plugin automatically.
 - nanosvg handles paths, `rect`/`circle`/`ellipse`/`line`/`polygon`, flat fills, and
   `linearGradient`. It does **not** render SVG `<text>` — put text in HTML on top of the SVG.
-- **PNG/JPG are not supported yet** — SVG only.
+- **PNG, JPG and BMP raster images work** (decoded by stb_image); **SVG** is rasterized by
+  nanosvg. Reference them the same way — `src="icon.png"`, shipped in `client/`. Raster images are
+  capped at 2048×2048. GIF/TGA and other formats are not enabled.
 
 > 💡 SVG is the reliable way to get crisp icons, gradient badges, arrows, and frames — it
 > sidesteps both the font-glyph and the rounded-corner limitations.
@@ -162,14 +179,18 @@ renders as an empty box (tofu).
 **Main window** (`client.window`):
 - **Size/title** from the manifest (`width`, `height`, `title`).
 - A borderless popup that stays over the game scene, follows the game window when you drag it,
-  and **hides when you alt-tab away** (returns when the game regains focus).
+  and **hides when you alt-tab away** (returns when the game regains focus) **and whenever you are
+  not in the game world** — login / server-select / character-select / loading. It only shows
+  while you are actually in-game.
 - **Open:** the manifest `entryPoints.hotkey` (e.g. `F5`), a tier-1 launcher (`MUPF.open()`), or
   the server. **Close:** the host's top-right close hotspot or `MUPF.close()`. Several can be open.
 
 **Tier-1 launcher** (`client.launcher`, optional):
-- A small **always-on, fixed, non-movable, non-closable** button window, positioned by `anchor`
-  + `x`/`y` relative to the game window (see
+- A small **always-on (while in the game world), fixed, non-movable, non-closable** button window,
+  positioned by `anchor` + `x`/`y` relative to the game window (see
   [MUPF Plugins → 2-tier plugins](MUPF-Plugins.md#2-tier-plugins--an-always-on-launcher-button)).
+  Like the main window it is hidden on the login / character-select screens, so it never appears
+  before you are in-game.
 - Renders its own `launcher.html`; the same `__mupf_click(x, y)` model applies. Its click calls
   `MUPF.open()` to open the main window.
 
