@@ -1,35 +1,38 @@
-# DevEmu — Lua Scripting API
+# DevEmu Lua and MUPF Developer Documentation
 
-Documentation for server-side and client-side Lua plugin development for the DevEmu MU Online server.
+Public documentation for developers who build server scripts and server-delivered client UI plugins for DevEmu MU Online.
 
----
+## Choose the correct development model
 
-## Getting Started
+| You want to build | Start here |
+|---|---|
+| A normal GameServer Lua script that uses the full engine API | [Getting Started](docs/Getting-Started.md) |
+| A server-managed plugin with an in-game HTML/CSS/JavaScript UI | [MUPF System Overview](docs/MUPF-Client-System-Overview.md) |
 
-- [Getting Started](docs/Getting-Started.md) — first plugin, constants, common patterns
-- [Project Layout](docs/Project-Layout.md) — folder structure, ScriptMain, require paths
+MUPF is a separate plugin contract. It does not replace ordinary GameServer Lua scripts, and it is not the legacy `Data/LuaUI` delivery path.
 
----
+## Server-side Lua reference
 
-## Server-Side Lua
-
-- **[Server Lua Functions](docs/Server-Lua-Functions.md)** — the complete, code-generated reference of **all 244 engine functions** (`LuaFunction.cpp`): exact **argument counts**, parameter types, and returns. Authoritative — arg counts are enforced, so match them exactly (the #1 cause of plugin crashes).
-- [Server Callbacks](docs/Server-Callbacks.md) — all 29 event hooks with parameters and return values
-- [Server Global Functions](docs/Server-Global-Functions.md) — narrative C++ API reference (grouped by topic with examples)
-- [Player Structure](docs/Player-Structure.md) — all player getters and setters
-- [Monster Structure](docs/Monster-Structure.md) — spawn, kill events, map iteration
-- [Item Structures](docs/Item-Structures.md) — inventory, give/drop, Gremory Case
-- [Database Structures](docs/Database-Structures.md) — async SQL guide with examples
-- [Scheduler](docs/Scheduler.md) — timer, daily reset, cooldowns, periodic DB flush
-
----
+- **[Server Lua Functions](docs/Server-Lua-Functions.md)** — code-generated reference for all exported engine functions, including exact argument counts.
+- [Server Callbacks](docs/Server-Callbacks.md) — event hooks, parameters, and return values.
+- [Server Global Functions](docs/Server-Global-Functions.md) — narrative API reference grouped by topic.
+- [Player Structure](docs/Player-Structure.md) — player getters and setters.
+- [Monster Structure](docs/Monster-Structure.md) — monster access, spawn, and iteration.
+- [Item Structures](docs/Item-Structures.md) — inventory, item delivery, and Gremory Case.
+- [Database Structures](docs/Database-Structures.md) — asynchronous SQL patterns.
+- [Scheduler](docs/Scheduler.md) — timers, daily jobs, cooldowns, and periodic work.
+- [Project Layout](docs/Project-Layout.md) — script folders, `ScriptMain`, and require paths.
 
 ## MU Plugin Framework (MUPF)
 
-Build a self-contained plugin with **both** a server side (Lua) and an in-game client UI
-(HTML/CSS/JS/SVG), delivered to players at runtime.
+MUPF combines private GameServer Lua with a client UI made from HTML, CSS, JavaScript, SVG, and supported raster images. Approved client assets are delivered by the GameServer when the player connects; plugin developers do not ship native client DLLs.
 
-- **[Writing Plugins](docs/Writing-Plugins.md)** — the complete how-to guide: build a plugin from hello-world to any complexity (**start here**)
-- [MUPF Plugins](docs/MUPF-Plugins.md) — overview, architecture, the manifest, capabilities, dev-vs-ship workflow, packaging (`.mupf` + MupfPacker)
-- [MUPF Server API](docs/MUPF-Server-API.md) — `PluginRegister`, `OnInvoke`, and the `ctx:*` object (`reply` / `sql` / `playerName` / `push`)
-- [MUPF Client API](docs/MUPF-Client-API.md) — the in-game UI: `MUPF.invoke` / `render` / `close`, the no-DOM re-render model, `__mupf_click`, SVG, CSS/font caveats
+Read these in order:
+
+1. **[MUPF System Overview](docs/MUPF-Client-System-Overview.md)** — architecture, lifecycle, scope, and current implementation status.
+2. **[Writing Plugins](docs/Writing-Plugins.md)** — practical tutorial and reusable patterns.
+3. [MUPF Plugins](docs/MUPF-Plugins.md) — authoritative manifest, permissions, deployment, limits, and packaging contract.
+4. [MUPF Server API](docs/MUPF-Server-API.md) — `PluginRegister`, `OnInvoke`, `host`, and `ctx:*`.
+5. [MUPF Client API](docs/MUPF-Client-API.md) — `MUPF.invoke`, rendering, input, windows, CSS, and images.
+
+> Documentation status: audited against the current `dev` implementation on **2026-08-31**. Where a planned API exists in code but is not complete end-to-end, the documentation marks it as provisional instead of presenting it as supported.

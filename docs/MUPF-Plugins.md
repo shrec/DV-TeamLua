@@ -1,272 +1,256 @@
 # MUPF Plugins
 
-**MUPF** (MU Plugin Framework) lets you ship a self-contained plugin that has **both**
-a server side and a client side:
+This page is the authoritative external-developer contract for plugin layout, manifest fields, capabilities, limits, reload behavior, and deployment.
 
-- **Server Lua** (`server/server.lua`) — runs inside the GameServer, can read player info
-  and query the database. **Never leaves the server.**
-- **Client UI** (`client/`) — HTML/CSS/JS (+ optional SVG) rendered in-game in its own
-  window, delivered to the player at runtime.
-
-A plugin talks to its own server logic over a request/response bridge — the client calls a
-server function, the server replies, the client re-renders. The bundled **Server Ranking**
-plugin (`com.dvteam.ranking`) is a complete working example.
-
----
-
-## Architecture at a glance
-
-```
-        PLUGIN (one folder, or one .mupf file)
-        ├─ plugin.json        ← manifest (id, window, hotkey, permissions)
-        ├─ server/server.lua  ← runs on the GameServer (DB + player access)
-        └─ client/            ← delivered to the player
-           ├─ index.html      ← UI (HTML/CSS/JS, the entry page)
-           ├─ *.svg           ← vector icons (optional)
-           └─ client.lua      ← optional client-side Lua
-
-   GameServer  ──BEGIN/PKG/READY──►  Client (in-game window)
-        ▲   server.lua loaded            │   index.html rendered
-        │   here, in the Lua stack       │
-        └──────── request / reply ───────┘
-           MUPF.invoke(fn,args,cb)  ⇄  OnInvoke(ctx,fn,args,reqId) → ctx:reply
-```
-
-On connect the server streams each plugin's **client** files to the player (server Lua is
-never sent). The client unpacks them into a per-plugin sandbox and renders `index.html`.
-
----
+> Audited against the current `dev` implementation on **2026-08-31**. Fields that are accepted as metadata but do not affect runtime behavior are marked explicitly.
 
 ## Plugin layout
 
+A server-backed plugin is developed as a source folder under `Data/ClientLuaPlugin/`:
+
+```text
+Data/ClientLuaPlugin/
+├─ policy.json
+└─ com.example.ranking/
+   ├─ plugin.json
+   ├─ server/
+   │  └─ server.lua
+   └─ client/
+      ├─ index.html
+      ├─ launcher.html       # optional
+      ├─ style.css
+      └─ images/*
 ```
-com.dvteam.ranking/
-├─ plugin.json
-├─ server/
-│  └─ server.lua          -- PluginRegister(...) + OnInvoke + ctx:sql
-└─ client/
-   ├─ index.html          -- the UI page (entry)
-   ├─ client.lua          -- optional
-   ├─ crown.svg           -- assets
-   └─ ...
-```
 
-A plugin lives under the server's plugins folder: **`Data/ClientLuaPlugin/`**.
+- `server.lua` runs only in the GameServer.
+- `plugin.json` and `client/*` are packed and streamed to the player on connect.
+- The client keeps received files in a per-plugin in-memory virtual file system.
+- There is no client-side Lua runtime. Client logic is JavaScript inside the HTML entry page.
 
----
+The main page path is currently fixed to `client/index.html`. If a launcher is configured, its page path is fixed to `client/launcher.html`.
 
-## The manifest — `plugin.json`
+## Minimal manifest
 
 ```json
 {
-  "manifest": 1,
-  "id": "com.dvteam.ranking",
+  "id": "com.example.ranking",
   "name": "Server Ranking",
   "version": "1.0.0",
   "apiVersion": 1,
   "minApiVersion": 1,
-  "author": "DV Team",
-  "description": "Top-100 character ranking panel.",
 
-  "server": { "entry": "server/server.lua" },
+  "server": {
+    "entry": "server/server.lua"
+  },
 
   "client": {
-    "entry": "client/client.lua",
-    "html":  "client/index.html",
-    "assets": ["client/index.html", "client/crown.svg"],
-    "window": { "width": 640, "height": 560, "resizable": false, "title": "Server Ranking" }
+    "window": {
+      "width": 640,
+      "height": 560,
+      "title": "Server Ranking",
+      "opacity": 235
+    }
   },
 
   "entryPoints": {
-    "hotkey":   "F5",
-    "uiButton": { "icon": null, "label": "Ranking", "tooltip": "Show the server ranking" }
+    "hotkey": "F5",
+    "uiButton": {
+      "label": "Ranking"
+    }
   },
 
-  "permissions": ["ui.window", "ui.hotkey", "net.request", "db.query"],
-
-  "limits": { "maxAssetBytes": 65536, "maxMsgBytes": 8000, "maxPending": 16 }
+  "permissions": ["db.query", "player.readBasic"]
 }
 ```
 
-| Field | Meaning |
+### Runtime fields
+
+| Field | Current behavior |
 |---|---|
-| `id` | Reverse-DNS unique id. The routing + policy key. **Required.** |
-| `apiVersion` / `minApiVersion` | Host-API version the plugin targets / requires. A client whose API < `minApiVersion` quarantines the plugin. |
-| `server.entry` | Path to the server Lua (loaded server-side, never sent). |
-| `client.html` | the HTML entry page — the UI **and its JavaScript**. |
-| `client.entry` | *reserved.* A per-plugin **client-side Lua** runtime is not active yet — **client logic is JavaScript** in your HTML, not Lua. Safe to omit. |
-| `client.window` | `width`, `height`, `title` of the in-game main window. |
-| `client.launcher` | *(optional)* a tier-1 always-on launcher button — see [2-tier plugins](#2-tier-plugins--an-always-on-launcher-button). |
-| `entryPoints.hotkey` | Key that toggles the window (`"F5"`, `"F6"`, a single letter…). |
-| `permissions` | Capabilities the plugin requests. Granted only if the operator also allows them (see Capabilities). |
-| `limits` | Per-plugin caps (asset bytes, message bytes, in-flight requests). |
+| `id` | Required unique string. It is the policy key and must exactly match `PluginRegister(id, hooks)`. |
+| `name` | Display metadata; defaults to `id`. |
+| `version` | Plugin metadata; defaults to `0.0.0`. |
+| `apiVersion` | API version targeted by the plugin; defaults to `1`. |
+| `minApiVersion` | Minimum client host API. A newer requirement quarantines the plugin instead of running it incorrectly. |
+| `server.entry` | Relative source-folder path to server Lua. Use `server/server.lua`. |
+| `client.window.width` / `height` | Fixed main popup size. Defaults to `360 × 240`. |
+| `client.window.title` | Parsed metadata. The popup is borderless, so draw the visible title in HTML. |
+| `client.window.opacity` | Whole-popup opacity from `0` (invisible) to `255` (opaque). Defaults to `235`. |
+| `client.launcher` | Presence enables the optional launcher. See [Launcher](#optional-launcher). |
+| `client.launcher.opacity` | Whole-launcher opacity from `0` to `255`. Defaults to `245`. |
+| `entryPoints.hotkey` | Main-window toggle key: `F1`–`F12`, one letter, or one digit. |
+| `entryPoints.uiButton.label` | Parsed label metadata. |
+| `permissions` | Requested server capabilities. Effective set = manifest request ∩ operator policy. |
 
----
+### Reserved or metadata-only fields
 
-## Capabilities (permissions)
+These fields may appear in manifests but are not current runtime controls:
 
-A plugin only gets a capability if it is in **both** the manifest `permissions` **and** the
-operator's `Data/ClientLuaPlugin/policy.json` (intersection — **deny-by-default**). An unknown
-plugin gets nothing.
+| Field | Status |
+|---|---|
+| `manifest`, `author`, `description` | Metadata only. |
+| `client.entry` | Reserved; client Lua is not executed. Omit it. |
+| `client.html` | Parsed but the host currently opens fixed `client/index.html`. |
+| `client.assets` | Not required; every safe file under `client/` is packed automatically. |
+| `client.window.html`, `resizable` | Not active. The main window is fixed-size and uses `client/index.html`. |
+| `client.launcher.html` | Not active as a path override. Use `client/launcher.html`. |
+| `entryPoints.uiButton.icon`, `tooltip` | Metadata only in the current client host. |
+| `limits.maxAssetBytes`, `limits.maxMsgBytes`, `limits.maxPending` | Not read from the manifest. Fixed host limits are listed in [Fixed limits](#fixed-limits). |
+
+Do not depend on a reserved field merely because it parses as valid JSON.
+
+## Capabilities and `policy.json`
+
+Capabilities are denied by default. A capability is active only when it appears in both places:
+
+1. the plugin's `permissions` array;
+2. the operator's `Data/ClientLuaPlugin/policy.json` entry for the same plugin id.
 
 ```json
-// Data/ClientLuaPlugin/policy.json
 {
-  "com.dvteam.ranking": ["ui.window", "ui.hotkey", "net.request", "db.query"]
+  "com.example.ranking": ["db.query", "player.readBasic"]
 }
 ```
 
-| Capability | Grants |
+The currently enforced server capabilities are:
+
+| Capability | Enables |
 |---|---|
-| `db.query` | `ctx:sql(...)` — parameterized async SQL |
-| `player.readBasic` | `ctx:playerName()`, `ctx:playerLevel()` |
-| `net.serverPush` | `ctx:push(...)` — server→client push |
-| `ui.window` | `ctx:open()` and the plugin window |
-| `ui.hotkey` | the launcher hotkey |
-| `net.request` | the client may call the server (`MUPF.invoke`) |
+| `db.query` | `ctx:sql(query, params, callback)` |
+| `player.readBasic` | `ctx:playerName()` and `ctx:playerLevel()` |
+| `net.serverPush` | Provisional `ctx:push(...)` sender. No JavaScript push callback exists yet. |
+| `ui.window` | Provisional `ctx:open()` and `host.open` senders. Server-initiated open is not executed by the current client host. |
 
-> ⚠️ A `ctx:*` call without its capability raises a Lua error (caught + logged) — the call
-> fails, the plugin keeps running.
+`MUPF.invoke`, the manifest hotkey, and client-side `MUPF.open()` are current client-host features; `net.request` and `ui.hotkey` are not presently enforced capability gates. They may remain as descriptive metadata, but do not treat them as security boundaries.
 
-See **[MUPF Server API](MUPF-Server-API.md)** and **[MUPF Client API](MUPF-Client-API.md)**.
+Calling a capability-gated `ctx:*` method without the capability raises a Lua error and logs the failure.
 
----
+## Optional launcher
 
-## 2-tier plugins — an always-on launcher button
-
-A hotkey is not always enough — you can't bind every plugin to a key. A plugin can ship a
-**tier-1 launcher**: a small, always-on, fixed button that opens the plugin's **tier-2 main
-window** on click. Both are ordinary HTML pages (same engine, same rules) — it's just two
-windows of one plugin.
-
-Declare the launcher under `client.launcher`:
+Adding a `client.launcher` object enables a small launcher window. The page must be named `client/launcher.html`.
 
 ```json
-"client": {
-  "html": "client/index.html",
-  "launcher": {
-    "html": "client/launcher.html",
-    "width": 150, "height": 46,
-    "anchor": "top-left", "x": 16, "y": 96
-  },
-  "window": { "html": "client/index.html", "width": 420, "height": 300, "title": "2-Tier Test" }
+{
+  "client": {
+    "window": { "width": 420, "height": 300, "title": "My Plugin", "opacity": 235 },
+    "launcher": {
+      "width": 150,
+      "height": 46,
+      "anchor": "top-left",
+      "x": 16,
+      "y": 96,
+      "opacity": 245
+    }
+  }
 }
 ```
 
-| Field | Meaning |
-|---|---|
-| `html` | the launcher button's HTML page (e.g. `client/launcher.html`) |
-| `width` / `height` | the launcher window size (px) |
-| `anchor` | where on the game window it sits (below) |
-| `x` / `y` | pixel offset from that anchor, into the game client area |
+Supported anchors:
 
-**Anchors:** `top-left` · `top-right` · `top-center` · `bottom-left` · `bottom-right` ·
-`bottom-center` · `left` · `right` · `center`. The launcher is positioned **relative to the game
-window** (works at any resolution), follows it when it moves, and hides when you alt-tab away
-**or leave the game world** (logo / server-select / character-select / loading screens).
+`top-left`, `top-right`, `top-center`, `bottom-left`, `bottom-right`, `bottom-center`, `left`, `right`, `center`.
 
-The launcher window is **always-on while you are in the game world, fixed, not movable, and not
-closable** — it is the plugin's entry point. It is *not* drawn on the login / character-select
-screens (the same rule applies to the main window), so plugin UI never leaks over them. Its page opens the main window by calling **`MUPF.open()`** (see the
-[Client API](MUPF-Client-API.md#mupfopenid--tier-1-launcher)). The main window opens / closes /
-drags normally; a plugin may also keep an `entryPoints.hotkey` and/or be opened by the server.
+The launcher is fixed and non-closable. Its JavaScript opens the plugin's main window:
 
-```
-[always-on launcher button]  --click → MUPF.open()-->  [main window opens]
-   client/launcher.html                                   client/index.html
+```js
+function __mupf_click(x, y) {
+  MUPF.open();
+}
 ```
 
-The bundled **2-Tier Test** plugin (`com.dvteam.test2tier`) is a minimal working example
-(launcher pill → a main window that pings the server).
+Both launcher and main popup follow the game window and are hidden outside the in-game world, while the game is minimized or tray-hidden, and while the Cash Shop is open.
 
----
+`opacity` controls the alpha of the entire native plugin window, including its HTML content. It must be an integer. Values below `0` or above `255` are clamped, while a missing or non-integer value uses the legacy default (`235` for the main popup and `245` for the launcher). Use CSS colors or alpha inside the page when only an individual element should be transparent.
 
-## Developing a plugin (dev vs ship)
+## Development and reload behavior
 
-You do **not** re-pack on every edit. There are two modes:
+With `MUPF_DEV_HOTRELOAD = 1`, the GameServer rescans and repacks plugin folders when a player connects. The client development loop is:
 
-### Dev mode — work in a source folder
-
-Put the plugin **folder** under `Data/ClientLuaPlugin/` and run the server in dev mode
-(`MUPF_DEV_HOTRELOAD = 1`, the default in dev builds). The server re-reads the plugin from
-disk on each connect, so:
-
-```
-edit client/index.html  →  relog  →  see the change
+```text
+edit client/* -> reconnect/relog -> see the new UI
 ```
 
-No packing, no full server restart. (Editing `server.lua` still needs a server restart — it
-is loaded once into the Lua stack at startup.)
+Changing `server.lua`, `plugin.json`, `policy.json`, or the installed plugin list requires the GameServer's **Reload Script** command or a GameServer restart. **Reload Script** rebuilds the GameServer Lua state and reloads plugin server environments without restarting the process.
 
-### Ship — pack into one .mupf
+The current reload path does not push replacement packages to players who are already online. Those players must reconnect to receive updated client files.
 
-When the plugin is ready, pack it into a single encrypted file with **MupfPacker**:
+Window and launcher opacity are sent with the plugin BEGIN metadata. After changing an opacity value, reload scripts (or restart the GameServer) and reconnect the client so the native windows are recreated with the new value.
 
-```bat
-MupfPacker.exe Data\ClientLuaPlugin\com.dvteam.ranking
-:: -> com.dvteam.ranking.mupf
+`MUPF_DEV_HOTRELOAD` is a build-time setting. It is not a manifest field or a per-plugin switch.
+
+## Packaging and deployment
+
+### Source-folder deployment
+
+Source folders are the complete supported form for plugins that contain `server.lua`:
+
+```text
+Data/ClientLuaPlugin/com.example.plugin/plugin.json
+Data/ClientLuaPlugin/com.example.plugin/server/server.lua
+Data/ClientLuaPlugin/com.example.plugin/client/index.html
 ```
 
-Drop the `.mupf` into the server's `Data/ClientLuaPlugin/` folder. In production
-(`MUPF_DEV_HOTRELOAD = 0`) the server **enumerates `*.mupf` files**, loads each plugin's
-`server.lua` into the Lua stack, and streams the client files to players.
+This form keeps `server.lua` on the GameServer and streams only `plugin.json` + `client/*`.
 
-> The GameServer reads **both** entry types from the same folder: **folders** (dev) and
-> **`.mupf` files** (shipped). You can mix them.
+### Current `.mupf` behavior
 
-### Reloading at runtime (no GS restart)
+The current command-line `MupfPacker` calls the shared client packer. It produces:
 
-The GameServer-window **`Reload Script`** command also reloads plugins: it re-scans + re-packs
-every plugin from disk (folders + `*.mupf`) and reloads each plugin's `server.lua` into the Lua
-stack — **without restarting the GameServer**. Use it after editing a plugin (or dropping in a
-new `.mupf`).
-
-- **Server side** (`server.lua`, manifests, packed client blobs) refreshes immediately.
-- **Client side**: players already online keep the old UI until they **relog** (reconnecting
-  re-streams the fresh client files). New logins get the new version right away.
-
----
-
-## The `.mupf` package
-
-A `.mupf` is the single distributable file for a plugin:
-
-```
-"MUPF" + version + XOR(secret, ZIP{ plugin.json, server/…, client/… })
+```text
+MUPF header + obfuscated ZIP { plugin.json, client/* }
 ```
 
-- A ZIP of the **whole** plugin, then XOR-encrypted with an embedded secret.
-- **Self-describing:** the server/client accept either this encrypted form or a plain `PK…`
-  zip (dev), so the same code path handles both.
-- The cipher + key live in exactly one place (`Common/MupfPack.cpp`), shared by the server,
-  the client, and **MupfPacker** — there is no second copy of the key.
+It does **not** include `server/*`. Therefore:
 
-> 🔒 Build **MupfPacker** as a C++ exe and protect it with **Themida** (like the client DLL).
-> The secret is compiled in; a plaintext/script packer would leak it and let anyone forge or
-> decrypt packages. See `tools/MupfPacker/README.md`.
+- use `.mupf` for client-only plugins whose manifest omits `server.entry`;
+- keep server-backed plugins as source-folder deployments in this release;
+- do not delete a server-backed source folder after creating a package with the current tool;
+- do not install a folder and `.mupf` with the same plugin id as two separate entries.
 
-The server unpacks a `.mupf` in memory, loads `server.lua` **directly into the Lua stack**,
-and re-packs only the **client** files (manifest + `client/*`, never `server/`) to send to
-players.
+The loader can read a full archive containing `server/*`, but the current public command-line packer does not generate that archive. Documentation will promote full single-file server-backed deployment only after the packer and loader contracts are aligned.
 
----
+### Security note
 
-## Operations checklist
+The `MUPF` wrapper uses an embedded-key XOR keystream over the ZIP payload. This is package obfuscation and tamper friction, not a guarantee of secrecy. The decoding code necessarily exists in distributed binaries. Keep credentials, SQL policy, validation rules, and valuable logic in `server.lua`, which is not streamed to players.
 
-| Setting | Dev | Production |
-|---|---|---|
-| `MUPF_DEV_HOTRELOAD` (`Game/PluginMgr.cpp`) | `1` (relog picks up edits) | **`0`** (cached, no per-login re-pack) |
-| Plugin form | source folder | `.mupf` file |
-| Wire blob | plain zip | encrypted |
-| `policy.json` | grant caps you test | grant only what each plugin needs |
+Plain ZIP input is accepted by the loader for development compatibility. Do not use that compatibility behavior as a production security assumption.
 
-> ⚠️ `server.lua` is loaded **once at startup**. Adding/removing a plugin or editing its
-> server Lua requires a server restart (the client side hot-reloads on relog in dev).
+## Fixed limits
 
----
+The current host enforces fixed limits; manifest `limits.*` does not override them.
+
+| Limit | Value | Effect |
+|---|---:|---|
+| Plugins loaded by one GameServer | 64 | Additional entries are not loaded. |
+| Uncompressed files per plugin | 256 | Package is rejected above the cap. |
+| Total uncompressed plugin bytes | 4 MiB | Package is rejected/quarantined. |
+| One uncompressed entry | 4 MiB | Package is rejected. |
+| VFS path length | 255 bytes | Entry is rejected. Traversal, absolute, drive, and backslash paths are also rejected. |
+| Request/reply payload | 8,000 bytes | Envelope encode/decode fails above the cap. |
+| Function/channel name | 64 bytes | Envelope is rejected above the cap. |
+| Pending requests per plugin instance | 64 | `MUPF.invoke` returns `0` when busy. |
+| Request timeout | 10 seconds | The pending request expires. |
+| Calls per player and plugin | 20 per 1-second window | Excess request receives a rate-limit error when a reply was expected. |
+| JSON nesting | 32 levels | Deeper values are converted to `null`. |
+
+Paginate server responses and keep UI assets small even when they are below the hard ceilings.
+
+## Pre-release checklist
+
+- [ ] `plugin.json.id` exactly matches `PluginRegister(...)`.
+- [ ] Main UI is `client/index.html`; optional launcher is `client/launcher.html`.
+- [ ] No client-side Lua is expected.
+- [ ] Every request function and argument is validated in `server.lua`.
+- [ ] SQL uses `ctx:sql` placeholders, never client-built SQL text.
+- [ ] Manifest and policy grant only the server capabilities the plugin uses.
+- [ ] Reply payloads remain under 8,000 bytes.
+- [ ] Client assets remain under the fixed package limits.
+- [ ] Client changes were tested after a fresh reconnect.
+- [ ] Server changes were tested after **Reload Script** or restart.
+- [ ] A server-backed plugin is deployed as a source folder with the current packer release.
 
 ## See also
 
-- **[MUPF Server API](MUPF-Server-API.md)** — `PluginRegister`, `OnInvoke`, the `ctx:*` object.
-- **[MUPF Client API](MUPF-Client-API.md)** — the in-game UI: `MUPF.invoke/render/close`, clicks, SVG.
-- **[Database Structures](Database-Structures.md)** — the async SQL model `ctx:sql` builds on.
+- [MUPF System Overview](MUPF-Client-System-Overview.md)
+- [Writing Plugins](Writing-Plugins.md)
+- [MUPF Server API](MUPF-Server-API.md)
+- [MUPF Client API](MUPF-Client-API.md)

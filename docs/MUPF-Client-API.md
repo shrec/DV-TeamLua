@@ -1,9 +1,10 @@
 # MUPF Client API
 
-The client side of a plugin is an HTML page (`client/index.html`) rendered **in-game** in its
-own window. It is drawn by the client's bundled HTML/CSS engine (**litehtml**) with JavaScript
-run by **duktape** — this is *not* a full browser. Read the **Important model** section first;
-it is the single biggest difference from web development.
+The client side of a plugin is the fixed entry page `client/index.html`, rendered **in-game**
+in its own window. An optional launcher uses the fixed page `client/launcher.html`. Pages are
+drawn by the bundled HTML/CSS engine (**litehtml**) with JavaScript run by **duktape** — this
+is *not* a full browser. Read the **Important model** section first; it is the single biggest
+difference from web development.
 
 > **Client logic is JavaScript.** There is no client-side Lua runtime — the manifest's
 > `client.entry` / `client.lua` is a reserved field that is **not executed** today. The
@@ -51,8 +52,10 @@ MUPF.invoke('getData', {}, function(resp){   // first request, on load
 
 ### `MUPF.invoke(fn, args, cb)` → reqId
 Call a server function (`OnInvoke(ctx, fn, args, reqId)` on the server). `args` is any JSON-able
-value. `cb(resp)` runs when the reply arrives — `resp` is the parsed reply object, or
-`{ error: "…" }` on failure. *(Requires the `net.request` capability.)*
+value. `cb(resp)` runs when the reply arrives — `resp` is the parsed reply object, or an object
+with an `error` field on a transport/handler failure. The current host permits request/reply
+without an enforced `net.request` capability; all authorization must still be performed by
+`server.lua`.
 
 ```js
 MUPF.invoke('getRanks', { page: 0 }, function(resp){
@@ -71,13 +74,39 @@ Close the (main) plugin window.
 
 ### `MUPF.open([id])` · tier-1 launcher
 Open a plugin's **main** window. With no argument, `MUPF.open()` opens **this** plugin's main
-window — this is what a **tier-1 launcher** page calls when its button is clicked. With an id,
-`MUPF.open("com.x.y")` opens that plugin's main window. *(Requires `ui.window`.)*
+window — this is what a launcher page calls when its button is clicked. With an id,
+`MUPF.open("com.x.y")` opens another locally loaded plugin's main window.
 
 ```js
 // in client/launcher.html — the whole always-on button opens the main window:
 function __mupf_click(x, y) { MUPF.open(); }
 ```
+
+### `MUPF.captureKeys(enabled)`
+
+Ask the host to route supported text-entry keys to this main popup. While capture is enabled,
+the page receives `__mupf_key(vk)` calls for letters, digits, Backspace, Enter, Space, Delete,
+minus, and decimal keys. Escape, arrows, and function keys continue to reach the game.
+
+```js
+var editing = false;
+
+function beginEditing() {
+  editing = true;
+  MUPF.captureKeys(true);
+}
+
+function __mupf_key(vk) {
+  if (!editing) return;
+  if (vk === 13) { editing = false; MUPF.captureKeys(false); submit(); }
+  else if (vk === 8) value = value.slice(0, -1);
+  else if (vk >= 48 && vk <= 57) value += String.fromCharCode(vk);
+  render();
+}
+```
+
+Capture is released when the popup closes or is destroyed. Implement your own field focus,
+value editing, length limit, and character whitelist; there is no browser form control model.
 
 ---
 
@@ -98,8 +127,8 @@ function __mupf_click(x, y) {
 - The host reserves the **top ~38px** as a window **drag strip**, and a **top-right ~38×38**
   area as a built-in **close** hotspot. Draw your title bar there; clicks elsewhere arrive in
   `__mupf_click`.
-- There is no hover / mouse-move / key event to JS — design around clicks (and the manifest
-  hotkey, which toggles the window).
+- There is no hover or mouse-move event. Keyboard input is available only through the explicit
+  `MUPF.captureKeys(true)` + `__mupf_key(vk)` path described above.
 
 ---
 
@@ -177,22 +206,34 @@ renders as an empty box (tofu).
 ## Windows: main + tier-1 launcher
 
 **Main window** (`client.window`):
-- **Size/title** from the manifest (`width`, `height`, `title`).
+- **Size** from the manifest (`width`, `height`). The popup is borderless; render the visible
+  title in your HTML instead of relying on `client.window.title`.
+- **Opacity** from `client.window.opacity`, using `0` (invisible) through `255` (opaque).
+  The default is `235`. This changes the alpha of the entire native popup, not one HTML element.
 - A borderless popup that stays over the game scene, follows the game window when you drag it,
-  and **hides when you alt-tab away** (returns when the game regains focus) **and whenever you are
-  not in the game world** — login / server-select / character-select / loading. It only shows
-  while you are actually in-game.
+  and is hidden whenever you are not in the game world, the game window is minimized or
+  tray-hidden, or the Cash Shop is open. As an owned window it follows the game in normal
+  desktop z-order during alt-tab.
 - **Open:** the manifest `entryPoints.hotkey` (e.g. `F5`), a tier-1 launcher (`MUPF.open()`), or
-  the server. **Close:** the host's top-right close hotspot or `MUPF.close()`. Several can be open.
+  another client plugin (`MUPF.open(id)`). **Close:** the host's top-right close hotspot or
+  `MUPF.close()`. Several can be open.
+
+> Server-originated open messages are provisional in the current host and do not open the popup.
+> Use the manifest hotkey, launcher, or client-side `MUPF.open()`.
 
 **Tier-1 launcher** (`client.launcher`, optional):
 - A small **always-on (while in the game world), fixed, non-movable, non-closable** button window,
   positioned by `anchor` + `x`/`y` relative to the game window (see
-  [MUPF Plugins → 2-tier plugins](MUPF-Plugins.md#2-tier-plugins--an-always-on-launcher-button)).
+  [MUPF Plugins → Optional launcher](MUPF-Plugins.md#optional-launcher)).
   Like the main window it is hidden on the login / character-select screens, so it never appears
   before you are in-game.
 - Renders its own `launcher.html`; the same `__mupf_click(x, y)` model applies. Its click calls
   `MUPF.open()` to open the main window.
+- `client.launcher.opacity` uses the same `0..255` range and defaults to `245`.
+
+Both opacity fields must be integers. Out-of-range values are clamped; missing or non-integer
+values use their defaults. After changing either field, reload/restart the GameServer and reconnect
+the client so the plugin metadata is resent and the native window is recreated.
 
 ---
 
@@ -222,7 +263,9 @@ renders as an empty box (tofu).
       for (var i=0;i<rows.length;i++) h += '<div class="n">'+esc(rows[i].name)+'</div>';
       return h + '</div>';
     }
-    function __mupf_click(x, y){ if (y < 24) MUPF.close(); }   // click the top strip to close
+    function __mupf_click(x, y){
+      if (y >= H - 40 && x >= W - 100) MUPF.close(); // optional custom close button region
+    }
     MUPF.invoke('getData', {}, function(resp){
       rows = (resp && resp.rows) || [];
       MUPF.render(view());

@@ -1,0 +1,34 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="900" viewBox="0 0 1600 900" role="img" aria-labelledby="title desc">
+  <title id="title">MUPF server-delivered client plugin architecture</title>
+  <desc id="desc">Server Lua remains private while approved client UI assets are streamed to an in-memory client host. Requests return through a controlled request and reply bridge.</desc>
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#07111d"/><stop offset="1" stop-color="#0c1f2a"/></linearGradient>
+    <linearGradient id="server" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#123f2e"/><stop offset="1" stop-color="#08291f"/></linearGradient>
+    <linearGradient id="client" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#113a55"/><stop offset="1" stop-color="#082538"/></linearGradient>
+    <filter id="shadow" x="-20%" y="-20%" width="140%" height="140%"><feDropShadow dx="0" dy="10" stdDeviation="14" flood-color="#000" flood-opacity=".45"/></filter>
+    <marker id="arrow" markerWidth="12" markerHeight="12" refX="10" refY="6" orient="auto"><path d="M0,0 L12,6 L0,12 Z" fill="#f4b942"/></marker>
+    <style>
+      .title{font:700 58px 'Segoe UI',Arial,sans-serif;fill:#f6f7f9;text-anchor:middle}.subtitle{font:400 27px 'Segoe UI',Arial,sans-serif;fill:#aebdca;text-anchor:middle}.boxTitle{font:700 30px 'Segoe UI',Arial,sans-serif;fill:#68d5ff;text-anchor:middle}.serverTitle{fill:#81e58e}.label{font:600 23px 'Segoe UI',Arial,sans-serif;fill:#f5f7fa}.small{font:400 20px 'Segoe UI',Arial,sans-serif;fill:#c7d4df}.arrowText{font:700 20px 'Segoe UI',Arial,sans-serif;fill:#ffd269;text-anchor:middle}.footer{font:600 21px 'Segoe UI',Arial,sans-serif;fill:#d8e4ec;text-anchor:middle}
+    </style>
+  </defs>
+  <rect width="1600" height="900" fill="url(#bg)"/>
+  <g opacity=".12" stroke="#5da2c7"><path d="M0 100H1600M0 200H1600M0 300H1600M0 400H1600M0 500H1600M0 600H1600M0 700H1600M0 800H1600"/><path d="M100 0V900M200 0V900M300 0V900M400 0V900M500 0V900M600 0V900M700 0V900M800 0V900M900 0V900M1000 0V900M1100 0V900M1200 0V900M1300 0V900M1400 0V900M1500 0V900"/></g>
+  <text x="800" y="75" class="title">Server-Delivered MUPF Plugins</text>
+  <text x="800" y="118" class="subtitle">Plugin logic stays on the GameServer; approved UI is delivered after connection</text>
+  <g filter="url(#shadow)"><rect x="55" y="175" width="420" height="470" rx="24" fill="url(#client)" stroke="#34bff2" stroke-width="3"/><rect x="590" y="175" width="420" height="470" rx="24" fill="url(#server)" stroke="#56ca68" stroke-width="3"/><rect x="1125" y="175" width="420" height="470" rx="24" fill="url(#client)" stroke="#34bff2" stroke-width="3"/></g>
+  <text x="265" y="225" class="boxTitle">BEFORE CONNECTION</text><line x1="105" y1="245" x2="425" y2="245" stroke="#34bff2" stroke-width="2"/>
+  <text x="105" y="305" class="label">Generic MUPF host only</text><text x="105" y="350" class="small">No individual plugin package</text><text x="105" y="385" class="small">No plugin native DLL</text><text x="105" y="420" class="small">No server logic or DB access</text>
+  <rect x="105" y="475" width="320" height="105" rx="14" fill="#071a28" stroke="#34bff2" stroke-width="2"/><text x="265" y="520" class="label" text-anchor="middle">Main.dll</text><text x="265" y="552" class="small" text-anchor="middle">generic client host</text>
+  <text x="800" y="225" class="boxTitle serverTitle">GAMESERVER</text><line x1="640" y1="245" x2="960" y2="245" stroke="#56ca68" stroke-width="2"/>
+  <rect x="640" y="275" width="320" height="72" rx="12" fill="#0a3024" stroke="#56ca68"/><text x="670" y="320" class="label">plugin.json + policy</text>
+  <rect x="640" y="365" width="320" height="72" rx="12" fill="#0a3024" stroke="#56ca68"/><text x="670" y="410" class="label">server.lua stays private</text>
+  <rect x="640" y="455" width="320" height="72" rx="12" fill="#0a3024" stroke="#56ca68"/><text x="670" y="500" class="label">player + database work</text>
+  <rect x="640" y="545" width="320" height="72" rx="12" fill="#0a3024" stroke="#56ca68"/><text x="670" y="590" class="label">capability enforcement</text>
+  <text x="1335" y="225" class="boxTitle">AFTER CONNECTION</text><line x1="1175" y1="245" x2="1495" y2="245" stroke="#34bff2" stroke-width="2"/>
+  <text x="1175" y="305" class="label">Approved client UI streamed</text><text x="1175" y="350" class="small">HTML • CSS • JavaScript</text><text x="1175" y="385" class="small">SVG • PNG • JPG • BMP</text><text x="1175" y="435" class="label">Validated in-memory VFS</text><text x="1175" y="480" class="label">Isolated in-game popup</text><text x="1175" y="530" class="label">No manual installation</text><text x="1175" y="575" class="small">Plugin UI is hidden outside</text><text x="1175" y="607" class="small">the active game world</text>
+  <line x1="475" y1="355" x2="575" y2="355" stroke="#f4b942" stroke-width="6" marker-end="url(#arrow)"/><text x="525" y="325" class="arrowText">CONNECT</text>
+  <line x1="1010" y1="355" x2="1110" y2="355" stroke="#f4b942" stroke-width="6" marker-end="url(#arrow)"/><text x="1060" y="305" class="arrowText">PLUGIN.JSON</text><text x="1060" y="330" class="arrowText">+ CLIENT/*</text>
+  <path d="M1340 665 V715 H800 V665" fill="none" stroke="#f4b942" stroke-width="5" marker-end="url(#arrow)"/><text x="1070" y="748" class="arrowText">MUPF.invoke: request</text>
+  <path d="M800 780 H1340" fill="none" stroke="#f4b942" stroke-width="5" marker-end="url(#arrow)"/><text x="1070" y="817" class="arrowText">ctx:reply: correlated response</text>
+  <rect x="55" y="842" width="1490" height="42" rx="18" fill="#102735" stroke="#31556a"/><text x="800" y="870" class="footer">Server is authoritative • Server Lua never leaves the GameServer • Only approved UI assets reach the client</text>
+</svg>

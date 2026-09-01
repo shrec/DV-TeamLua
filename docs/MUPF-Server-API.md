@@ -1,181 +1,175 @@
 # MUPF Server API
 
-The server side of a plugin is `server/server.lua`. It runs inside the GameServer's Lua state
-in a **fresh per-plugin environment** (writes stay local; reads fall through to the trusted
-server `_G`). It registers a hooks table and handles requests from its client UI.
+The server side of a plugin is `server/server.lua`. It runs in the GameServer Lua state inside a per-plugin environment: plugin writes remain local, while reads can fall through to the trusted server globals.
 
-> All `ctx:*` calls are **capability-gated** (see [MUPF Plugins → Capabilities](MUPF-Plugins.md#capabilities-permissions)).
-> A call without its capability raises a Lua error (caught + logged); the plugin keeps running.
+`server.lua` is private server code. It is not included in the client package sent to players.
 
----
-
-## Skeleton
+## Minimal server plugin
 
 ```lua
 local Plugin = {}
 
 function Plugin.OnLoad()
-    host.log("my plugin ready")          -- optional; runs once at load
+    host.log("plugin ready")
 end
 
--- A client request arrived. fn/args are UNTRUSTED — validate before use.
 function Plugin.OnInvoke(ctx, fn, args, reqId)
     if fn == "ping" then
-        ctx:reply(reqId, { pong = true, you = ctx:playerName() })
+        ctx:reply(reqId, { pong = true })
         return
     end
+
     ctx:reply(reqId, { error = "unknown_fn", code = "BAD_REQUEST" })
 end
 
-PluginRegister("com.yourteam.yourplugin", Plugin)   -- id MUST match plugin.json
+PluginRegister("com.example.plugin", Plugin)
 return Plugin
 ```
 
----
+The registration id must exactly match `plugin.json.id`.
 
-## `PluginRegister(idStr, hooks)`
+## `PluginRegister(id, hooks)`
 
-Registers the plugin's hooks. Call it once at the end of `server.lua`. `idStr` must equal the
-manifest `id`.
+Registers the hook table for the plugin currently being loaded. A plugin cannot register hooks under another plugin's id.
 
-| Hook | When |
+| Hook | Called when |
 |---|---|
-| `OnLoad()` | once, right after the plugin loads (optional) |
-| `OnInvoke(ctx, fn, args, reqId)` | a client `MUPF.invoke(fn, args, cb)` arrived |
+| `OnLoad()` | Immediately after the server chunk loads. Optional. |
+| `OnInvoke(ctx, fn, args, reqId)` | A client `MUPF.invoke(fn, args, callback)` request arrives. |
 
-> ⚠️ A plugin that never calls `PluginRegister` (or provides no `OnInvoke`) receives no
-> invocations — the client gets a `no_handler` error.
+A missing registration or missing `OnInvoke` handler makes the server side inert and returns a handler error to request/reply calls.
 
----
+## `host`
 
-## `host.log(...)`
+### `host.log(...)`
 
-Writes to the server log (`plugin` channel). Available without a capability.
+Writes values to the GameServer `plugin` log channel. No capability is required.
 
 ```lua
-host.log("loaded", someValue)
+host.log("loaded", value)
 ```
 
----
+### `host.open(aIndex, plugin)` / `host.openPlugin(aIndex, plugin)`
 
-## The `ctx` object
+Accepts a numeric plugin id or string plugin id and requires the target plugin's `ui.window` capability. The server sender exists, but the current client host only logs the resulting server-open message and does not open the popup. Treat both names as provisional and do not use them in production workflows yet.
 
-`ctx` is passed to `OnInvoke`. It is scoped to the **calling player** and the **current
-request**.
+## The `ctx` request object
+
+`ctx` belongs to the calling player and current plugin request.
 
 ### `ctx:aIndex()` → number
 
-The caller's in-world object index (the player slot). Always available.
+Returns the caller's in-world object index. No capability is required.
 
-### `ctx:playerName()` → string  · `ctx:playerLevel()` → number
-*Capability: `player.readBasic`.* Basic info about the calling player. Return `nil`/empty if
-the player logged out mid-request.
+### `ctx:playerName()` → string or nil
 
-```lua
-local name = ctx:playerName()
-local lvl  = ctx:playerLevel()
-```
+*Capability: `player.readBasic`.*
+
+Returns the caller's backend character name. Returns `nil` when the player is no longer available.
+
+### `ctx:playerLevel()` → number
+
+*Capability: `player.readBasic`.*
+
+Returns the caller's current level, or `0` when the player is no longer available.
 
 ### `ctx:reply(reqId, table)`
-Sends the response for this request. `table` is converted to JSON and delivered to the
-client's `MUPF.invoke` callback. Call it **once** per `reqId`.
+
+Sends the correlated response to the JavaScript callback registered by `MUPF.invoke`.
 
 ```lua
-ctx:reply(reqId, { rows = out, total = #out })
--- error replies are a normal table; pick your own shape:
-ctx:reply(reqId, { error = "bad_input", code = "BAD_REQUEST" })
+ctx:reply(reqId, { rows = rows, total = #rows })
 ```
 
-### `ctx:sql(sql, params, cb)`
-*Capability: `db.query`.* Runs a **parameterized, asynchronous** query. The game loop is never
-blocked; `cb(rows)` fires when the result arrives. Each `?` in `sql` is replaced by the
-matching `params` entry — **the host escapes/validates each value**, so never build SQL by
-string concatenation.
+- Call it once for each request that expects a reply.
+- The body must be a Lua table or `nil`/omitted.
+- The serialized JSON payload must stay under 8,000 bytes.
+- Application errors use your own table shape, for example `{ error = "bad_input", code = "BAD_REQUEST" }`.
+
+### `ctx:sql(query, params, callback)`
+
+*Capability: `db.query`.*
+
+Runs a query asynchronously and invokes the callback when the result is returned to the GameServer Lua runtime.
 
 ```lua
 ctx:sql(
-    "SELECT name, reset, level FROM character_info WHERE authority = ? ORDER BY reset DESC LIMIT 100",
-    { 0 },                                  -- params: ? -> 0  (numbers validated, strings escaped, bools -> 0/1)
+    "SELECT name, level FROM character_info WHERE authority = ? ORDER BY level DESC LIMIT 100",
+    { 0 },
     function(rows)
-        local out = {}
+        local result = {}
         if rows then
-            for i, r in ipairs(rows) do      -- rows = 1-based array of row tables
-                out[i] = { rank = i, name = r.name, reset = tonumber(r.reset) or 0 }
-            end
-        end
-        ctx:reply(reqId, { rows = out })     -- reply from inside the SQL callback
-    end)
-```
-
-`rows` follows the same shape as the global async-SQL model — see
-**[Database Structures](Database-Structures.md)** (`SELECT` with results → 1-based table of
-`{ col = value }`; otherwise a number).
-
-> 🔒 The callback is routed by a **host-allocated opaque label** — one plugin can never
-> receive another plugin's SQL result.
-
-### `ctx:push(channel, table)` · `ctx:open()`
-*Capabilities `net.serverPush` / `ui.window`.* Server-initiated push to the client / request to
-open the plugin window.
-
-> 🚧 The server side of `ctx:push` / `ctx:open` exists; client-side delivery (push → client
-> handler, server-initiated open) is being finalized. Use request/reply (`OnInvoke` +
-> `ctx:reply`) as the primary pattern for now.
-
----
-
-## JSON ↔ Lua
-
-- `args` in `OnInvoke` is the client's payload, already parsed into a **Lua table**
-  (objects → tables, arrays → 1-based tables, numbers/strings/bools/null → Lua values).
-- The table you pass to `ctx:reply` / `ctx:push` is serialized back to JSON for the client.
-- Nesting is capped (depth 32) to bound stack use. Keep payloads flat-ish.
-
-> ⚠️ **Treat `fn` and `args` as hostile.** A modified client can send any `fn`/`args` to any
-> plugin. Validate types and ranges before use (the Ranking plugin clamps its `page` arg, for
-> example). The server only *routes* by plugin id; it does not vouch for the request contents.
-
----
-
-## Full example — Server Ranking (`server/server.lua`)
-
-```lua
-local Ranking = {}
-local PAGE_SIZE, MAX_ROWS = 10, 100
-
-local RANK_SQL =
-    "SELECT guid, name, race, reset, level, level_master, level_majestic " ..
-    "FROM character_info WHERE authority = 0 " ..
-    "ORDER BY `reset` DESC, `level_majestic` DESC, `level_master` DESC, `level` DESC LIMIT 100"
-
-function Ranking.OnLoad()
-    host.log("ranking server ready")
-end
-
-function Ranking.OnInvoke(ctx, fn, args, reqId)
-    if fn ~= "getRanks" then
-        ctx:reply(reqId, { error = "unknown_fn", code = "BAD_REQUEST" })
-        return
-    end
-    ctx:sql(RANK_SQL, {}, function(rows)
-        local out = {}
-        if rows then
-            for i, r in ipairs(rows) do
-                if i > MAX_ROWS then break end
-                out[#out + 1] = {
-                    rank = i, name = r.name or "", class = tonumber(r.race) or 0,
-                    reset = tonumber(r.reset) or 0, level = tonumber(r.level) or 0,
-                    ml = tonumber(r.level_master) or 0, jl = tonumber(r.level_majestic) or 0,
+            for i, row in ipairs(rows) do
+                result[i] = {
+                    name = row.name or "",
+                    level = tonumber(row.level) or 0
                 }
             end
         end
-        ctx:reply(reqId, { total = #out, rows = out })
+        ctx:reply(reqId, { rows = result })
     end)
-end
-
-PluginRegister("com.dvteam.ranking", Ranking)
-return Ranking
 ```
 
-The matching client (`index.html`) calls `MUPF.invoke("getRanks", {}, cb)` and renders the
-result — see **[MUPF Client API](MUPF-Client-API.md)**.
+Parameter rules:
+
+- each `?` is replaced in order;
+- numbers must be finite;
+- strings are escaped and quoted by the host;
+- booleans become `1` or `0`;
+- other parameter types are rejected.
+
+The current binding replaces `?` lexically, not through a native database prepared-statement object. Do not place literal `?` characters in quoted SQL text or comments, and never concatenate client input into SQL.
+
+The callback is registered under a host-created opaque label, so one plugin cannot claim another plugin's SQL callback.
+
+### `ctx:push(channel, table)` — provisional
+
+*Capability: `net.serverPush`.*
+
+The GameServer can encode and send the push envelope, but the current client host does not deliver it to a JavaScript callback. Use request/reply polling driven by explicit player actions for now.
+
+### `ctx:open()` — provisional
+
+*Capability: `ui.window`.*
+
+The GameServer can encode and send the open envelope, but the current client host does not execute the open action. Use a manifest hotkey, `client/launcher.html`, or client-side `MUPF.open()`.
+
+## JSON and Lua conversion
+
+Inbound JSON is converted as follows:
+
+- object → Lua table with string keys;
+- array → 1-based Lua array table;
+- string/number/boolean → matching Lua primitive;
+- JSON `null` → `nil`.
+
+Outbound Lua tables are arrays only when every key is an integer from `1` through `n`. An empty Lua table serializes as `[]`; use at least one string key when you need a JSON object.
+
+Conversion is capped at 32 nested levels. Deeper values become `null`.
+
+## Security requirements
+
+The client payload is untrusted. A modified client may send arbitrary function names and arguments.
+
+Every `OnInvoke` implementation must:
+
+1. whitelist `fn`;
+2. verify every argument type;
+3. clamp numeric ranges and string lengths;
+4. re-check ownership, currency, inventory space, and permissions on the server;
+5. use `ctx:sql` parameters for any client-derived value;
+6. keep replies small and paginated.
+
+`pluginId` selects the destination plugin. It is not proof that the caller is authorized to perform the requested action.
+
+## Reload behavior
+
+`server.lua` is loaded when the GameServer Lua state is built. A file save alone does not update the live state.
+
+After changing server Lua, the manifest, policy, or plugin list, use the GameServer's **Reload Script** command or restart the GameServer. Client UI changes still require the player to reconnect because online clients keep their previously streamed package.
+
+## See also
+
+- [MUPF Plugins](MUPF-Plugins.md) — manifest, policy, limits, and deployment.
+- [MUPF Client API](MUPF-Client-API.md) — request callbacks and UI rendering.
+- [Database Structures](Database-Structures.md) — general asynchronous SQL behavior.
