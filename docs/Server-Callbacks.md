@@ -625,24 +625,28 @@ Custom packet received from the client.
 
 ## Database
 
-### `OnSQLAsyncResult(label, rows)` — no return
+### `OnSQLAsyncResult(label, callbackParam, rows)` — no return
 
-Result of a `SQLAsyncQuery()` call.
+Result of a `SQLAsyncQuery()` call. The callback always receives three arguments,
+even when the optional `callbackParam` was not supplied.
 
 | Parameter | Type | Description |
 |---|---|---|
 | `label` | string | Label passed to `SQLAsyncQuery()` |
-| `rows` | table | Array of row tables — `rows[n]["columnName"]` (all values are strings) |
+| `callbackParam` | string | Optional context supplied as the third argument to `SQLAsyncQuery()` |
+| `rows` | table or number | SELECT row table; otherwise affected-row count or `0` for no result. Numeric SQL fields become Lua numbers; other non-NULL fields become strings. |
 
 ```lua
-BridgeFunctionAttach("OnSQLAsyncResult", function(label, rows)
+BridgeFunctionAttach("OnSQLAsyncResult", function(label, callbackParam, rows)
     if label ~= "myplugin_load" then return end
+    if type(rows) ~= "table" or not rows[1] then return end
 
-    if not rows[1] then return end  -- no results
-
-    local points = tonumber(rows[1]["points"] or 0)
+    local points = tonumber(rows[1]["points"]) or 0
 end)
 ```
+
+A failed SELECT and a successful empty SELECT both reach the legacy callback
+without a distinct error status. Do not interpret `rows == 0` as proof of success.
 
 ---
 
@@ -678,4 +682,4 @@ end)
 | `OnCanEnterEvent` | `aIndex, eventId` | `1`=allow `0`=block |
 | `OnEventEnter` | `aIndex, eventId` | none |
 | `OnPacketRecv` | `aIndex, data, size` | none |
-| `OnSQLAsyncResult` | `label, rows` | none |
+| `OnSQLAsyncResult` | `label, callbackParam, rows` | none |

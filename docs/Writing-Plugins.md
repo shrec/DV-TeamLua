@@ -223,19 +223,23 @@ function Plugin.OnInvoke(ctx, fn, args, reqId)
         { 0 },
         function(rows)
             local result = {}
-            if rows then
-                for i, row in ipairs(rows) do
-                    result[i] = {
-                        rank = i,
-                        name = row.name or "",
-                        level = tonumber(row.level) or 0
-                    }
-                end
+            for i, row in ipairs(rows) do
+                result[i] = {
+                    rank = i,
+                    name = row.name or "",
+                    level = tonumber(row.level) or 0
+                }
             end
             ctx:reply(reqId, { rows = result })
         end)
 end
 ```
+
+This read-only example can show an empty list when the SELECT failed: current
+`ctx:sql` sends an empty table both for a failed SELECT and for zero rows.
+It does not send `nil` on failure. Do not use a `nil` check or this callback
+alone to decide whether to consume items, charge currency, or issue a refund.
+See [MUPF Server API](MUPF-Server-API.md#ctxsqlquery-params-callback).
 
 Rules:
 

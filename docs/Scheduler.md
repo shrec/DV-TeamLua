@@ -110,9 +110,9 @@ BridgeFunctionAttach("OnTimerThread", function()
     flushTick = flushTick + 1
     if flushTick % 30 ~= 0 then return end
     for name, d in pairs(dirty) do
-        SQLAsyncQuery("flush", string.format(
+        SQLAsyncQuery(string.format(
             "UPDATE myplugin SET points=%d WHERE char_name='%s'",
-            d.points, name:gsub("'", "''")))
+            d.points, name:gsub("'", "''")), "flush")
     end
     dirty = {}
 end)
@@ -120,13 +120,18 @@ end)
 BridgeFunctionAttach("OnCharacterClose", function(aIndex)
     local name = GetObjectName(aIndex)
     if dirty[name] then
-        SQLAsyncQuery("flush", string.format(
+        SQLAsyncQuery(string.format(
             "UPDATE myplugin SET points=%d WHERE char_name='%s'",
-            dirty[name].points, name:gsub("'", "''")))
+            dirty[name].points, name:gsub("'", "''")), "flush")
         dirty[name] = nil
     end
 end)
 ```
+
+This is a best-effort example: it clears `dirty` before the asynchronous
+write is confirmed, and the legacy callback does not distinguish a failed
+write from one affecting zero rows. Do not use it as a durability guarantee
+for balances, currency, or item grants.
 
 ---
 

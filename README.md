@@ -35,4 +35,4 @@ Read these in order:
 4. [MUPF Server API](docs/MUPF-Server-API.md) — `PluginRegister`, `OnInvoke`, `host`, and `ctx:*`.
 5. [MUPF Client API](docs/MUPF-Client-API.md) — `MUPF.invoke`, rendering, input, windows, CSS, and images.
 
-> Documentation status: audited against the current `dev` implementation on **2026-08-31**. Where a planned API exists in code but is not complete end-to-end, the documentation marks it as provisional instead of presenting it as supported.
+> Documentation status: the core MUPF contract was audited against `dev` on **2026-08-31**; inventory deletion and asynchronous SQL behavior were rechecked on **2026-09-20**. The wiki documents only shipped API behavior and marks incomplete features as provisional.

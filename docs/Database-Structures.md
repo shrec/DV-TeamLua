@@ -18,19 +18,22 @@ end)
 
 ---
 
-## `SQLAsyncQuery(label, sql [, callbackParam])`
+## `SQLAsyncQuery(sql [, label [, callbackParam]])`
+
+The **SQL statement is the first argument**. The optional label is second;
+`callbackParam` is third. To pass `callbackParam`, supply a label too.
 
 | Parameter | Type | Description |
 |---|---|---|
-| `label` | string | Returned as first arg in callback. Use unique prefix per plugin. |
-| `sql` | string | Full SQL statement |
-| `callbackParam` | string | Optional extra string passed back unchanged — useful for carrying player name or index |
+| `sql` | string | Full SQL statement to execute |
+| `label` | string | Optional; returned as the first callback argument (empty string if omitted). Use a unique prefix per plugin. |
+| `callbackParam` | string | Optional; returned unchanged as the second callback argument, useful for carrying player context |
 
 ```lua
-SQLAsyncQuery("myplug_load", "SELECT points FROM myplug WHERE char_name = 'Test'")
+SQLAsyncQuery("SELECT points FROM myplug WHERE char_name = 'Test'", "myplug_load")
 
 -- with callbackParam to carry context
-SQLAsyncQuery("myplug_load", sql, tostring(aIndex))
+SQLAsyncQuery(sql, "myplug_load", tostring(aIndex))
 ```
 
 ---
@@ -54,11 +57,19 @@ SQLAsyncQuery("myplug_load", sql, tostring(aIndex))
 -- rows == 0  (not a table!)
 ```
 
+The legacy query path also returns `0` after a failed SELECT. The callback
+has no separate success/error argument, so `rows == 0` cannot prove that a
+query succeeded with no rows. Do not base an irreversible charge, item removal,
+or refund on that assumption.
+
 ### INSERT / UPDATE / DELETE → number (affected rows)
 
 ```lua
 -- rows == number of rows affected
 ```
+
+A failed write and a successful write affecting zero rows can likewise both
+appear as `0` in this legacy callback.
 
 **Always check the type before using:**
 
@@ -113,9 +124,8 @@ end
 ### One row, one column
 
 ```lua
-SQLAsyncQuery("load_pts_" .. aIndex,
-    string.format("SELECT points FROM myplug WHERE char_name = '%s'",
-        GetObjectName(aIndex):gsub("'", "''")))
+SQLAsyncQuery(string.format("SELECT points FROM myplug WHERE char_name = '%s'",
+    GetObjectName(aIndex):gsub("'", "''")), "load_pts_" .. aIndex)
 
 BridgeFunctionAttach("OnSQLAsyncResult", function(label, callbackParam, rows)
     if label:sub(1, 9) ~= "load_pts_" then return end
@@ -135,11 +145,11 @@ end)
 ### One row, multiple columns
 
 ```lua
-SQLAsyncQuery("load_player_" .. aIndex, string.format([[
+SQLAsyncQuery(string.format([[
     SELECT points, last_claim, vip_level, note
     FROM myplug
     WHERE char_name = '%s'
-]], GetObjectName(aIndex):gsub("'", "''")))
+]], GetObjectName(aIndex):gsub("'", "''")), "load_player_" .. aIndex)
 
 BridgeFunctionAttach("OnSQLAsyncResult", function(label, callbackParam, rows)
     if label:sub(1, 12) ~= "load_player_" then return end
@@ -164,12 +174,12 @@ end)
 ### Multiple rows — leaderboard / top list
 
 ```lua
-SQLAsyncQuery("top10", [[
+SQLAsyncQuery([[
     SELECT char_name, points, reset_count
     FROM myplug
     ORDER BY points DESC
     LIMIT 10
-]])
+]], "top10")
 
 BridgeFunctionAttach("OnSQLAsyncResult", function(label, callbackParam, rows)
     if label ~= "top10" then return end
@@ -198,7 +208,7 @@ Load all records into a Lua table on startup, then use it instantly without furt
 local rewardTable = {}   -- [char_name] = { points, claimed }
 
 BridgeFunctionAttach("OnReadScript", function()
-    SQLAsyncQuery("init_load_all", "SELECT char_name, points, claimed FROM myplug")
+    SQLAsyncQuery("SELECT char_name, points, claimed FROM myplug", "init_load_all")
 end)
 
 BridgeFunctionAttach("OnSQLAsyncResult", function(label, callbackParam, rows)
@@ -231,11 +241,11 @@ end)
 ### Multiple rows — process per-player rewards
 
 ```lua
-SQLAsyncQuery("pending_rewards", [[
+SQLAsyncQuery([[
     SELECT char_name, item_cat, item_idx, item_level
     FROM pending_rewards
     WHERE delivered = 0
-]])
+]], "pending_rewards")
 
 BridgeFunctionAttach("OnSQLAsyncResult", function(label, callbackParam, rows)
     if label ~= "pending_rewards" then return end
@@ -253,9 +263,9 @@ BridgeFunctionAttach("OnSQLAsyncResult", function(label, callbackParam, rows)
                 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0)
 
             -- Mark delivered
-            SQLAsyncQuery("mark_delivered", string.format(
+            SQLAsyncQuery(string.format(
                 "UPDATE pending_rewards SET delivered = 1 WHERE char_name = '%s'",
-                name:gsub("'", "''")))
+                name:gsub("'", "''")), "mark_delivered")
         end
     end
 end)
@@ -270,7 +280,7 @@ The callback does not know who triggered the query. Two patterns:
 ### Pattern A — Index in label (simple)
 
 ```lua
-SQLAsyncQuery("load_" .. aIndex, sql)
+SQLAsyncQuery(sql, "load_" .. aIndex)
 
 -- in callback:
 local aIndex = tonumber(label:sub(6))   -- "load_" is 5 chars
@@ -281,7 +291,7 @@ if GetObjectConnected(aIndex) ~= OBJECT_ONLINE then return end
 
 ```lua
 local name = GetObjectName(aIndex)
-SQLAsyncQuery("load_data", sql, name)   -- name passed as callbackParam
+SQLAsyncQuery(sql, "load_data", name)   -- name passed as callbackParam
 
 -- in callback:
 local name   = callbackParam
@@ -293,29 +303,30 @@ if aIndex < 0 or GetObjectConnected(aIndex) ~= OBJECT_ONLINE then return end
 
 ## Write Queries (INSERT / UPDATE / DELETE)
 
-No need to read `rows` for write-only queries — just fire and forget:
+For non-critical, best-effort writes, you can send a query without using its
+callback. The legacy callback cannot confirm whether a zero-row write failed:
 
 ```lua
 -- INSERT
-SQLAsyncQuery("w", string.format(
+SQLAsyncQuery(string.format(
     "INSERT INTO myplug (char_name, points) VALUES ('%s', 0)",
-    name:gsub("'", "''")))
+    name:gsub("'", "''")), "w")
 
 -- UPDATE
-SQLAsyncQuery("w", string.format(
+SQLAsyncQuery(string.format(
     "UPDATE myplug SET points = points + %d WHERE char_name = '%s'",
-    amount, name:gsub("'", "''")))
+    amount, name:gsub("'", "''")), "my_update")
 
 -- UPSERT (insert or update)
-SQLAsyncQuery("w", string.format([[
+SQLAsyncQuery(string.format([[
     INSERT INTO myplug (char_name, points) VALUES ('%s', %d)
     ON DUPLICATE KEY UPDATE points = %d
-]], name:gsub("'", "''"), points, points))
+]], name:gsub("'", "''"), points, points), "w")
 
 -- DELETE
-SQLAsyncQuery("w", string.format(
+SQLAsyncQuery(string.format(
     "DELETE FROM myplug WHERE char_name = '%s'",
-    name:gsub("'", "''")))
+    name:gsub("'", "''")), "w")
 ```
 
 For write queries, `rows` in the callback = number of affected rows. You can check it:
@@ -325,7 +336,7 @@ BridgeFunctionAttach("OnSQLAsyncResult", function(label, callbackParam, rows)
     if label ~= "my_update" then return end
     -- rows = affected row count (number)
     if rows == 0 then
-        LogPrint("No rows updated — char not found")
+        LogPrint("Update affected zero rows or failed; status is ambiguous")
     end
 end)
 ```

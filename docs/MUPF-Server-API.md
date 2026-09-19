@@ -90,25 +90,35 @@ ctx:reply(reqId, { rows = rows, total = #rows })
 
 *Capability: `db.query`.*
 
-Runs a query asynchronously and invokes the callback when the result is returned to the GameServer Lua runtime.
+Runs a query asynchronously and calls `callback(data)` when a result reaches the
+GameServer Lua runtime. For a SELECT, `data` is a 1-based table of row tables;
+for a write statement, it is a numeric affected-row count.
 
 ```lua
+-- Read-only example: an empty display is not proof the query succeeded.
 ctx:sql(
     "SELECT name, level FROM character_info WHERE authority = ? ORDER BY level DESC LIMIT 100",
     { 0 },
     function(rows)
         local result = {}
-        if rows then
-            for i, row in ipairs(rows) do
-                result[i] = {
-                    name = row.name or "",
-                    level = tonumber(row.level) or 0
-                }
-            end
+        for i, row in ipairs(rows) do
+            result[i] = {
+                name = row.name or "",
+                level = tonumber(row.level) or 0
+            }
         end
         ctx:reply(reqId, { rows = result })
     end)
 ```
+
+**Failure limitation:** the current callback has no error or success argument.
+A failed SELECT and a successful SELECT with zero rows both deliver an empty
+table; a failed write and a successful write affecting zero rows both deliver
+`0`. A failed query does **not** deliver `nil`. `if rows then` therefore cannot
+confirm a SELECT succeeded. Do not make irreversible inventory, currency,
+refund, or delivery decisions from this callback alone. Plugin authors must not
+assume that `rows == nil` detects a failed query. A callback invalidated by a
+script reload or plugin unload may not run at all.
 
 Parameter rules:
 

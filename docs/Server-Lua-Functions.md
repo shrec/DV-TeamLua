@@ -151,10 +151,10 @@ See also [Writing Plugins](Writing-Plugins.md) and [MUPF Server API](MUPF-Server
 | `EventInventoryGetItemIndex(aIndex, slot)` | 2 | aIndex:int, slot:int | int item index, nil if empty | Get the item-index of an event-inventory slot |
 | `InventoryGetItemIndex(aIndex, slot)` | 2 | aIndex:int, slot:int | int item index, nil if empty | Get the item-index of a main-inventory slot |
 | `EventInventoryGetItemCount(aIndex, itemid, level)` | 3 | aIndex:int, itemid:int, level:number | int count | Count matching items in the event inventory |
-| `InventoryGetItemCount(aIndex, itemid, level)` | 3 | aIndex:int, itemid:int, level:number | int count | Count matching items in the main inventory |
+| `InventoryGetItemCount(aIndex, itemid, level)` | 3 | aIndex:int, itemid:int, level:number | int units | Count matching main-inventory units; stack quantities are included |
 | `EventInventoryDelItemIndex(aIndex, slot)` | 2 | aIndex:int, slot:int | nil | Delete an event-inventory item by slot and resend the event item list |
-| `InventoryDelItemIndex(aIndex, slot)` | 2 | aIndex:int, slot:int | nil | Delete a main-inventory item by slot (ItemDeleteByUse) |
-| `InventoryDelItemCount(aIndex, itemid, level, count)` | 4 | aIndex:int, itemid:int, level:number, count:int | nil | Delete N matching items from the main inventory |
+| `InventoryDelItemIndex(aIndex, slot)` | 2 | aIndex:int, slot:int | unspecified (not a success flag) | Consume one unit at the main-inventory slot; clear it when the last unit is used |
+| `InventoryDelItemCount(aIndex, itemid, level, count)` | 4 | aIndex:int, itemid:int, level:number, count:int | unspecified (not a success flag) | Consume up to `count` matching units across main-inventory stacks/items, not `count` stack slots |
 | `EventInventoryDelItemCount(aIndex, itemid, level, count)` | 4 | aIndex:int, itemid:int, level:number, count:int | nil | Delete N matching items from the event inventory |
 | `InventoryGetFreeSlotCount(aIndex)` | 1 | aIndex:int | int empty-slot count | Get number of free main-inventory slots |
 | `InventoryCheckSpaceByItem(aIndex, itemid)` | 2 | aIndex:int, itemid:int | int slot, <0 if no space | Find a free inventory position fitting the given item |
@@ -208,7 +208,7 @@ See also [Writing Plugins](Writing-Plugins.md) and [MUPF Server API](MUPF-Server
 | `UserCalcAttribute(aIndex)` | 1 | aIndex:int | bool (1) | Recalculates player's character stats |
 | `UserInfoSend(aIndex)` | 1 | aIndex:int | bool (1) | Sends the player's stats packet to client |
 | `UserActionSend(aIndex, target, Action)` | 3 | aIndex:int, target:int, Action:int | bool (1) | Sends a player action/emote toward a target |
-| `SQLAsyncQuery(query, label?, callbackParam?)` | 1+ | Query:string, Label:string?, CallBackParam:string? | bool (1) | Runs an async SQL query on a detached thread with callback (1-3 args) |
+| `SQLAsyncQuery(query, label?, callbackParam?)` | 1+ | Query:string, Label:string?, CallBackParam:string? | unspecified (not query success) | Runs an async SQL query with callback; SQL is the first argument (1-3 args) |
 | `UserWarehouseOpen(aIndex, warehouseindex?)` | 1+ | aIndex:int, warehouseindex:int? | bool (1) | Opens warehouse interface (multi-warehouse/VIP aware), default index 1 |
 | `MuunInventoryGetWearSize()` | 0 | (none) | int (MUUN_INVENTORY_WEAR_SIZE) | Returns muun inventory wear slot count |
 | `MuunInventoryGetFullSize()` | 0 | (none) | int (MUUN_INVENTORY_SIZE) | Returns total muun inventory size |

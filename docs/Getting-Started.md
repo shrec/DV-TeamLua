@@ -106,15 +106,24 @@ end)
 ```lua
 BridgeFunctionAttach("OnCharacterEntry", function(aIndex)
     local name = GetObjectName(aIndex):gsub("'", "''")
-    SQLAsyncQuery("myplugin_load", string.format(
-        "SELECT coins FROM myplugin_data WHERE char_name = '%s'", name))
+    SQLAsyncQuery(string.format(
+        "SELECT coins FROM myplugin_data WHERE char_name = '%s'", name), "myplugin_load")
 end)
 
-BridgeFunctionAttach("OnSQLAsyncResult", function(label, rows)
+BridgeFunctionAttach("OnSQLAsyncResult", function(label, callbackParam, rows)
     if label ~= "myplugin_load" then return end
-    local coins = tonumber(rows[1] and rows[1]["coins"] or 0)
+    -- A SELECT with no rows returns 0, not a table.
+    local coins = 0
+    if type(rows) == "table" and rows[1] then
+        coins = tonumber(rows[1]["coins"]) or 0
+    end
 end)
 ```
+
+The legacy callback always has three parameters: `label`, `callbackParam`, and
+`rows`. This introductory read example does not distinguish a failed SELECT
+from a successful empty result; do not use that ambiguity for a charge or refund.
+See [Database Structures](Database-Structures.md) for details.
 
 ### Command handler
 ```lua

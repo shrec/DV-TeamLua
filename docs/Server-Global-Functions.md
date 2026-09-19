@@ -688,31 +688,32 @@ Free slot count in the player's Gremory Case of the given type (`-1` on error).
 See [Item Structures](Item-Structures.md) for the full inventory API.
 
 ```lua
--- Quick reference (all slot-based; itemid = cat*512 + idx where an item id is taken)
+-- Main inventory; itemid = cat*512 + idx where an item id is required.
 InventoryGetWearSize(aIndex)
 InventoryGetMainSize(aIndex)
 InventoryGetFullSize(aIndex)
 InventoryGetItemTable(aIndex, slot)               -- item table, or nil if empty
 InventoryGetItemIndex(aIndex, slot)               -- item Index at slot, nil if empty
-InventoryGetItemCount(aIndex, itemid, level)      -- count of matching items
+InventoryGetItemCount(aIndex, itemid, level)      -- matching units (stack quantities included)
 InventoryGetFreeSlotCount(aIndex)
 InventoryCheckSpaceByItem(aIndex, itemid)         -- free slot (>=0), or <0 if no room
 InventoryCheckSpaceBySize(aIndex, w, h)           -- free slot (>=0), or <0 if no room
 InventorySetItemTable(aIndex, slot, tbl)          -- edit the item already in slot
-InventoryDelItemIndex(aIndex, slot)               -- delete the item at slot
-InventoryDelItemCount(aIndex, itemid, level, n)   -- delete N matching items
+InventoryDelItemIndex(aIndex, slot)               -- consume 1 unit at slot; clear if last
+InventoryDelItemCount(aIndex, itemid, level, n)   -- consume n matching units, not n stacks
 
--- Event inventory (same API, different prefix)
+-- Event and Muun inventories have separate deletion implementations.
 EventInventoryGet/Set/Del...
-
--- Muun inventory
 MuunInventoryGet/Set/Del...
 ```
 
 > ⚠️ `InventoryCheckSpaceByItem` takes the **combined `itemid`** and returns a **slot number**
 > (`< 0` = no room), not a boolean. `InventoryGetItemIndex` / `InventoryDelItemIndex` are
-> **slot-based** (`aIndex, slot`), and `InventoryGetItemCount` / `InventoryDelItemCount` match by
-> `itemid` + `level`. See [Item Structures](Item-Structures.md).
+> **slot-based** (`aIndex, slot`); `InventoryGetItemCount` / `InventoryDelItemCount` match by
+> `itemid` + `level` and count **units** in the main inventory. Deletion does not
+> report how many units it removed, so do not use its Lua return value as a success flag.
+> See [Item Structures](Item-Structures.md) for stack behavior and the separate
+> Event/Muun APIs.
 
 ---
 
@@ -798,13 +799,15 @@ Write a string to the server's main config.
 
 ## Database (Async SQL)
 
-### `SQLAsyncQuery(label, sql [, callbackParam])`
-Execute a non-blocking SQL query. Result arrives in `OnSQLAsyncResult`.
+### `SQLAsyncQuery(sql [, label [, callbackParam]])`
+Execute a non-blocking SQL query. The SQL statement comes first; the optional
+label comes second. Result arrives in `OnSQLAsyncResult`.
 
 ```lua
 local name = GetObjectName(aIndex):gsub("'", "''")
-SQLAsyncQuery("load_" .. aIndex,
-    string.format("SELECT points FROM myplugin WHERE char_name = '%s'", name))
+SQLAsyncQuery(
+    string.format("SELECT points FROM myplugin WHERE char_name = '%s'", name),
+    "load_" .. aIndex)
 ```
 
 See [Database Structures](Database-Structures.md) for full guide.

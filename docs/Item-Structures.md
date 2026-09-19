@@ -95,21 +95,31 @@ InventorySetItemTable(aIndex, 12, { Level = 15, Durability = 255, Option3 = 0 })
 ```lua
 InventoryGetItemTable(aIndex, slot)             -- 2 args -> item table, or nil if empty
 InventoryGetItemIndex(aIndex, slot)             -- 2 args -> item Index at slot, nil if empty
-InventoryGetItemCount(aIndex, itemid, level)    -- 3 args -> count of matching items
+InventoryGetItemCount(aIndex, itemid, level)    -- 3 args -> count of matching units (stacks included)
 InventoryGetFreeSlotCount(aIndex)               -- 1 arg  -> number of free bag slots
 InventoryCheckSpaceByItem(aIndex, itemid)       -- 2 args -> free slot (>=0), or <0 if no room
 InventoryCheckSpaceBySize(aIndex, width, height)-- 3 args -> free slot (>=0), or <0 if no room
-InventoryDelItemIndex(aIndex, slot)             -- 2 args -> delete the item at slot
-InventoryDelItemCount(aIndex, itemid, level, count) -- 4 args -> delete N matching items
+InventoryDelItemIndex(aIndex, slot)             -- 2 args -> consume 1 unit at slot; remove item if last unit
+InventoryDelItemCount(aIndex, itemid, level, count) -- 4 args -> consume count matching units (not stacks)
 ```
+
+For the **main inventory**, `InventoryDelItemIndex` consumes **one unit** at the
+specified slot. A stack remains in that slot until its last unit is consumed;
+a non-stackable item is removed immediately. `InventoryDelItemCount` treats
+`count` as **units**, subtracting stack quantities across matching slots (or
+removing that many non-stackable items). `InventoryGetItemCount` uses the same
+unit convention. These delete calls are not an atomic transaction and do not
+report how many units were actually removed; check availability before use and
+do not treat their Lua return value as a success confirmation.
 
 > ⚠️ `InventoryCheckSpaceByItem` takes the **combined `itemid`** and returns a **slot number**
 > (`< 0` means "no room"), **not** a boolean and **not** `(cat, idx)`.
 
-The **Event** inventory mirrors this API with an `EventInventory` prefix
+The **Event** inventory has corresponding functions with an `EventInventory` prefix
 (`EventInventoryGetItemTable` / `GetItemIndex` / `GetItemCount` / `DelItemIndex` / `DelItemCount`),
-and the **Muun** inventory with a `MuunInventory` prefix — see
-[Server Lua Functions](Server-Lua-Functions.md) for the full set and exact arg counts.
+and the **Muun** inventory has a `MuunInventory` prefix. Their deletion paths
+are separate; do not assume the main-inventory stack behavior applies to them.
+See [Server Lua Functions](Server-Lua-Functions.md) for the full set and arg counts.
 
 ---
 
